@@ -1,0 +1,19 @@
+<article class="rounded-xl border border-slate-200 bg-white p-3">
+  <div class="mb-3 flex items-center justify-between">
+    <h3 class="text-base font-bold text-slate-900">Shipping Revenue</h3>
+    <button type="button" class="rounded-md border border-slate-300 px-2 py-1 text-xs">This Month</button>
+  </div>
+  <p class="mb-4 text-3xl font-bold text-slate-900">
+    INR 3,05,000
+    <span class="ml-2 text-xs font-semibold text-emerald-600">+14.9%</span>
+  </p>
+
+  <div class="flex h-52 items-end justify-between gap-2 border-t border-slate-200 pt-3">
+    @for (bar of bars; track bar.label) {
+      <div class="flex flex-1 flex-col items-center gap-2">
+        <div class="w-5 rounded-md bg-blue-600" [style.height.%]="bar.value"></div>
+        <small class="text-[11px] text-slate-500">{{ bar.label }}</small>
+      </div>
+    }
+  </div>
+</article>

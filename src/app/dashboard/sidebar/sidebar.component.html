@@ -1,0 +1,145 @@
+<aside
+  class="hidden h-full shrink-0 border-r border-slate-200 bg-white p-4 transition-all duration-200 lg:flex lg:flex-col"
+  [class.w-64]="!isCollapsed"
+  [class.w-20]="isCollapsed"
+>
+  <div class="mb-5 flex items-center" [class.justify-between]="!isCollapsed" [class.justify-center]="isCollapsed">
+    <div class="flex items-center gap-2" [class.justify-center]="isCollapsed">
+      <div
+        class="grid h-8 w-8 place-items-center rounded-full bg-linear-to-br from-blue-600 to-cyan-400 text-sm font-bold text-white"
+      >
+        T
+      </div>
+      <span *ngIf="!isCollapsed" class="text-lg font-bold text-blue-700">Track</span>
+    </div>
+
+    <button
+      type="button"
+      class="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+      (click)="toggleSidebar()"
+      [attr.aria-label]="isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        class="h-5 w-5"
+      >
+        <path d="M15 18l-6-6 6-6" *ngIf="!isCollapsed"></path>
+        <path d="M9 18l6-6-6-6" *ngIf="isCollapsed"></path>
+      </svg>
+    </button>
+  </div>
+
+  <nav class="space-y-1">
+    <a
+      routerLink="/"
+      routerLinkActive="bg-blue-50 font-semibold text-blue-700"
+      [routerLinkActiveOptions]="{ exact: true }"
+      class="flex items-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+      [class.justify-center]="isCollapsed"
+      title="Dashboard"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+        <path d="M3 13h8V3H3z"></path>
+        <path d="M13 21h8v-6h-8z"></path>
+        <path d="M13 11h8V3h-8z"></path>
+        <path d="M3 21h8v-6H3z"></path>
+      </svg>
+      <span *ngIf="!isCollapsed" class="ml-3">Dashboard</span>
+    </a>
+
+    <a
+      routerLink="/shipments"
+      routerLinkActive="bg-blue-50 font-semibold text-blue-700"
+      class="flex items-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+      [class.justify-center]="isCollapsed"
+      title="Shipments"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+        <path d="M3 7l9 4 9-4"></path>
+        <path d="M3 7l9-4 9 4v10l-9 4-9-4z"></path>
+        <path d="M12 11v10"></path>
+      </svg>
+      <span *ngIf="!isCollapsed" class="ml-3">Shipments</span>
+    </a>
+
+    <a
+      routerLink="/fleet-management"
+      routerLinkActive="bg-blue-50 font-semibold text-blue-700"
+      class="flex items-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+      [class.justify-center]="isCollapsed"
+      title="Fleet Management"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+        <path d="M3 13h14l2 3v3h-2"></path>
+        <path d="M3 13V7h11l3 6"></path>
+        <circle cx="7" cy="19" r="2"></circle>
+        <circle cx="17" cy="19" r="2"></circle>
+      </svg>
+      <span *ngIf="!isCollapsed" class="ml-3">Fleet Management</span>
+    </a>
+
+    <a
+      routerLink="/warehouse"
+      routerLinkActive="bg-blue-50 font-semibold text-blue-700"
+      class="flex items-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+      [class.justify-center]="isCollapsed"
+      title="Warehouse"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+        <path d="M3 10l9-6 9 6"></path>
+        <path d="M5 10v10h14V10"></path>
+        <path d="M9 20v-6h6v6"></path>
+      </svg>
+      <span *ngIf="!isCollapsed" class="ml-3">Warehouse</span>
+    </a>
+
+    <a
+      routerLink="/reports"
+      routerLinkActive="bg-blue-50 font-semibold text-blue-700"
+      class="flex items-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+      [class.justify-center]="isCollapsed"
+      title="Reports"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+        <path d="M4 19h16"></path>
+        <path d="M7 15l3-3 3 2 4-5"></path>
+        <path d="M6 19V8"></path>
+      </svg>
+      <span *ngIf="!isCollapsed" class="ml-3">Reports</span>
+    </a>
+  </nav>
+
+  
+
+  <div class="mt-4 space-y-1">
+    <a
+      href="javascript:void(0)"
+      class="flex items-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+      [class.justify-center]="isCollapsed"
+      title="Settings"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V22a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 005 15.4a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 005 8.91a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009.09 5c.5-.2.84-.68.91-1.21V3a2 2 0 114 0v.09c.07.53.41 1.01.91 1.21.5.2 1.07.1 1.47-.29l.06-.06a2 2 0 112.83 2.83l-.06.06c-.39.4-.49.97-.29 1.47.2.5.68.84 1.21.91H21a2 2 0 110 4h-.09c-.53.07-1.01.41-1.21.91z"></path>
+      </svg>
+      <span *ngIf="!isCollapsed" class="ml-3">Settings</span>
+    </a>
+    <a
+      href="javascript:void(0)"
+      class="flex items-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+      [class.justify-center]="isCollapsed"
+      title="Logout"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"></path>
+        <path d="M16 17l5-5-5-5"></path>
+        <path d="M21 12H9"></path>
+      </svg>
+      <span *ngIf="!isCollapsed" class="ml-3">Logout</span>
+    </a>
+  </div>
+</aside>
