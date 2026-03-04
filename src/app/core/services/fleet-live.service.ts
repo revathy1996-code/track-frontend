@@ -1,15 +1,21 @@
-import { Injectable } from '@angular/core';
+import { Injectable, NgZone } from '@angular/core';
 import { Observable, Subject } from 'rxjs';
 import { io, Socket } from 'socket.io-client';
-import { SimulationStatus, Vehicle } from '../models/fleet.models';
+import { Incident, RerouteEvent, SimulationStatus, Vehicle } from '../models/fleet.models';
 
 @Injectable({
   providedIn: 'root'
 })
 export class FleetLiveService {
   private socket?: Socket;
+  private readonly socketUrl = this.buildSocketUrl();
   private readonly statusSubject = new Subject<SimulationStatus>();
   private readonly updateSubject = new Subject<Vehicle[]>();
+  private readonly incidentsSubject = new Subject<Incident[]>();
+  private readonly rerouteSubject = new Subject<RerouteEvent>();
+  private readonly rerouteHistorySubject = new Subject<RerouteEvent[]>();
+
+  constructor(private readonly ngZone: NgZone) {}
 
   connect(): void {
     if (this.socket?.connected) {
@@ -21,7 +27,7 @@ export class FleetLiveService {
       this.socket.disconnect();
     }
 
-    this.socket = io('http://localhost:5000', {
+    this.socket = io(this.socketUrl, {
       transports: ['websocket', 'polling']
     });
 
@@ -30,11 +36,23 @@ export class FleetLiveService {
     });
 
     this.socket.on('simulation:status', (status: SimulationStatus) => {
-      this.statusSubject.next(status);
+      this.ngZone.run(() => this.statusSubject.next(status));
     });
 
     this.socket.on('simulation:update', (vehicles: Vehicle[]) => {
-      this.updateSubject.next(vehicles);
+      this.ngZone.run(() => this.updateSubject.next(vehicles));
+    });
+
+    this.socket.on('incidents:update', (incidents: Incident[]) => {
+      this.ngZone.run(() => this.incidentsSubject.next(incidents));
+    });
+
+    this.socket.on('simulation:reroute', (event: RerouteEvent) => {
+      this.ngZone.run(() => this.rerouteSubject.next(event));
+    });
+
+    this.socket.on('simulation:reroute:history', (events: RerouteEvent[]) => {
+      this.ngZone.run(() => this.rerouteHistorySubject.next(events));
     });
 
     this.socket.on('disconnect', (reason: string) => {
@@ -50,7 +68,6 @@ export class FleetLiveService {
     if (!this.socket) {
       return;
     }
-
     this.socket.removeAllListeners();
     this.socket.disconnect();
     this.socket = undefined;
@@ -62,5 +79,23 @@ export class FleetLiveService {
 
   simulationUpdates$(): Observable<Vehicle[]> {
     return this.updateSubject.asObservable();
+  }
+
+  incidents$(): Observable<Incident[]> {
+    return this.incidentsSubject.asObservable();
+  }
+
+  reroutes$(): Observable<RerouteEvent> {
+    return this.rerouteSubject.asObservable();
+  }
+
+  rerouteHistory$(): Observable<RerouteEvent[]> {
+    return this.rerouteHistorySubject.asObservable();
+  }
+
+  private buildSocketUrl(): string {
+    const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'https' : 'http';
+    const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+    return `${protocol}://${host}:5000`;
   }
 }
