@@ -6,7 +6,7 @@ import { Component } from '@angular/core';
   standalone: false
 })
 export class SidebarComponent {
-  protected isCollapsed = false;
+  protected isCollapsed = true;
 
   protected toggleSidebar(): void {
     this.isCollapsed = !this.isCollapsed;
