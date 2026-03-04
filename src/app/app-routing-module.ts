@@ -12,9 +12,9 @@ const routes: Routes = [
     path: '',
     component: DashboardComponent,
     children: [
-      { path: '', component: DashboardOverviewComponent },
+      //{ path: '', component: DashboardOverviewComponent },
       { path: 'shipments', component: ShipmentsComponent },
-      { path: 'fleet-management', component: FleetManagementComponent },
+      { path: '', component: FleetManagementComponent },
       { path: 'warehouse', component: WarehouseComponent },
       { path: 'reports', component: ReportsComponent }
     ]
