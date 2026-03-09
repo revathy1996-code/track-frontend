@@ -10,6 +10,7 @@ import {
   PerformanceAnalyticsResponse,
   RerouteEventsResponse,
   SimulationStatus,
+  VehicleOverviewResponse,
   VehiclesResponse
 } from '../models/fleet.models';
 
@@ -60,6 +61,12 @@ export class FleetApiService {
       .pipe(this.withLogging('POST /incidents/inject/:vehicleId'));
   }
 
+  injectIncidentForTransitVehicles(): Observable<{ affectedVehicleIds?: string[] }> {
+    return this.http
+      .post<{ affectedVehicleIds?: string[] }>(`${this.baseUrl}/incidents/inject-transit`, {})
+      .pipe(this.withLogging('POST /incidents/inject-transit'));
+  }
+
   resolveIncident(incidentId: string): Observable<unknown> {
     return this.http
       .patch(`${this.baseUrl}/incidents/${incidentId}/resolve`, {})
@@ -99,6 +106,12 @@ export class FleetApiService {
     return this.http
       .get<PerformanceAnalyticsResponse>(`${this.baseUrl}/analytics/summary`)
       .pipe(this.withLogging('GET /analytics/summary'));
+  }
+
+  getVehicleOverview(vehicleId: string): Observable<VehicleOverviewResponse> {
+    return this.http
+      .get<VehicleOverviewResponse>(`${this.baseUrl}/vehicles/overview/${vehicleId}`)
+      .pipe(this.withLogging('GET /vehicles/overview/:vehicleId'));
   }
 
   private buildBackendBaseUrl(): string {

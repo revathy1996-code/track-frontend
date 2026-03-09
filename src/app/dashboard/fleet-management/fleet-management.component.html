@@ -23,7 +23,7 @@
         type="button"
         class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
         (click)="initMockVehicles()"
-        [disabled]="isInitializing || isStarting || isStopping || isResettingFresh"
+        [disabled]="isInitializing || isStarting || isStopping"
       >
         Initialize 5 Mock Vehicles
       </button>
@@ -31,7 +31,7 @@
         type="button"
         class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
         (click)="startSimulation()"
-        [disabled]="isInitializing || isStarting || isStopping || isResettingFresh || isSimulationRunning || vehicles.length === 0"
+        [disabled]="isStarting || isStopping || isSimulationRunning || vehicles.length === 0"
       >
         Start Simulation
       </button>
@@ -39,7 +39,7 @@
         type="button"
         class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
         (click)="stopSimulation()"
-        [disabled]="isInitializing || isStarting || isStopping || isResettingFresh || !isSimulationRunning"
+        [disabled]="isStarting || isStopping || !isSimulationRunning"
       >
         Stop Simulation
       </button>
@@ -47,7 +47,7 @@
         type="button"
         class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
         (click)="resetAllAndStartFresh()"
-        [disabled]="isInitializing || isStarting || isStopping || isInjectingIncident || isApplyingRoute || isResettingFresh"
+        [disabled]="isStarting || isStopping || isInjectingIncident || isApplyingRoute || isResettingFresh"
       >
         {{ isResettingFresh ? 'Resetting...' : 'Reset All & Start Fresh' }}
       </button>
@@ -55,7 +55,7 @@
         type="button"
         class="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
         (click)="injectIncidentNearFocusedVehicle()"
-        [disabled]="isInitializing || isInjectingIncident || isResettingFresh || !isSimulationRunning || vehicles.length === 0"
+        [disabled]="isInjectingIncident || !isSimulationRunning || vehicles.length === 0"
       >
         Inject Road Block
       </button>
@@ -63,7 +63,7 @@
         type="button"
         class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
         (click)="resetVehicleFocus()"
-        [disabled]="!isAnalyzingVehicle || isResettingFresh"
+        [disabled]="!isAnalyzingVehicle"
       >
         Reset To All Vehicles
       </button>
@@ -128,14 +128,22 @@
               <td class="py-3 pr-4">{{ vehicle.rerouteCount || 0 }}</td>
               <td class="py-3 pr-4">{{ (vehicle.totalDelayMinutes || 0) | number: '1.1-2' }} min</td>
               <td class="py-3 pr-4">
-                <button
-                  type="button"
-                  class="inline-flex items-center rounded-md border border-indigo-300 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
-                  (click)="analyzeVehicle(vehicle)"
-                  [disabled]="isResettingFresh"
-                >
-                  Analyze
-                </button>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="inline-flex items-center rounded-md border border-indigo-300 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                    (click)="analyzeVehicle(vehicle)"
+                  >
+                    Analyze
+                  </button>
+                  <button
+                    type="button"
+                    class="inline-flex items-center rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-50"
+                    (click)="openVehicleOverview(vehicle)"
+                  >
+                    Overview
+                  </button>
+                </div>
               </td>
             </tr>
             <tr *ngIf="vehicles.length === 0">
@@ -170,7 +178,7 @@
                   type="button"
                   class="rounded-md border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                   (click)="openResolveModal(incident)"
-                  [disabled]="isInitializing || isStarting || isStopping || isResettingFresh || isResolveModalOpen || isLoadingResolvePreview"
+                  [disabled]="isStarting || isStopping || isResolveModalOpen || isLoadingResolvePreview"
                 >
                   Resolve
                 </button>
@@ -227,7 +235,7 @@
         <h3 class="text-lg font-bold text-slate-900">Resolve Incident With Alternate Route</h3>
         <p class="text-xs text-slate-600" *ngIf="resolvePreview">
           {{ resolvePreview.incident.incidentId }} | Vehicle {{ resolvePreview.vehicle.vehicleId }} |
-          Click the orange route to enable Apply.
+          Choose any bright alternate route on map.
         </p>
       </div>
       <button
@@ -250,6 +258,9 @@
 
         <div *ngIf="!isLoadingResolvePreview && resolveModalError" class="rounded-md bg-rose-50 p-2 text-sm font-medium text-rose-700">
           {{ resolveModalError }}
+        </div>
+        <div *ngIf="!isLoadingResolvePreview && resolveModalSuccess" class="rounded-md bg-emerald-50 p-2 text-sm font-medium text-emerald-700">
+          {{ resolveModalSuccess }}
         </div>
 
         <ng-container *ngIf="resolvePreview">
@@ -282,17 +293,41 @@
           <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Congestion Layers</p>
           <p class="text-sm text-slate-800">{{ resolvePreview.heatmapPoints.length }} points rendered</p>
         </div>
-        <div class="rounded-md bg-slate-100 p-2 text-xs font-medium text-slate-700">
-          {{ isAlternateRouteSelected ? 'Alternate route selected.' : 'Click the orange route on map to enable Apply.' }}
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Alternate Routes</p>
+          <div class="mt-2 space-y-2">
+            <button
+              type="button"
+              *ngFor="let option of resolveAlternateOptions; let idx = index"
+              class="w-full rounded-md border px-3 py-2 text-left text-xs font-semibold transition"
+              [class.border-fuchsia-400]="idx === 0 && !isAlternateRouteActive(option.routeId)"
+              [class.bg-fuchsia-50]="idx === 0 && !isAlternateRouteActive(option.routeId)"
+              [class.text-fuchsia-800]="idx === 0 && !isAlternateRouteActive(option.routeId)"
+              [class.border-cyan-400]="idx === 1 && !isAlternateRouteActive(option.routeId)"
+              [class.bg-cyan-50]="idx === 1 && !isAlternateRouteActive(option.routeId)"
+              [class.text-cyan-800]="idx === 1 && !isAlternateRouteActive(option.routeId)"
+              [class.border-emerald-500]="isAlternateRouteActive(option.routeId)"
+              [class.bg-emerald-50]="isAlternateRouteActive(option.routeId)"
+              [class.text-emerald-800]="isAlternateRouteActive(option.routeId)"
+              [disabled]="isResolveRouteApplied || isApplyingRoute"
+              (click)="selectAlternateRoute(option.routeId)"
+            >
+              {{ option.label }}
+              <span *ngIf="option.etaMinutes !== undefined" class="ml-1 text-[11px] font-medium">
+                (ETA: {{ option.etaMinutes | number: '1.1-1' }} min)
+              </span>
+            </button>
+          </div>
         </div>
-        <button
-          type="button"
-          class="w-full rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-          (click)="selectAlternateRouteFromPanel()"
-          [disabled]="!resolvePreview"
-        >
-          Select Alternate Route
-        </button>
+        <div class="rounded-md bg-slate-100 p-2 text-xs font-medium text-slate-700">
+          {{
+            isResolveRouteApplied
+              ? 'Applied. Incident is resolved. You can close this window.'
+              : isAlternateRouteSelected
+              ? ('Selected: ' + selectedAlternateRouteId + '.')
+              : 'Click any bright alternate route on map, or select one from the list.'
+          }}
+        </div>
         </ng-container>
 
         <div *ngIf="!resolvePreview" class="text-xs text-slate-600">
@@ -303,13 +338,83 @@
           <button
             type="button"
             class="w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            [disabled]="!isAlternateRouteSelected || isApplyingRoute"
+            [disabled]="!isAlternateRouteSelected || isApplyingRoute || isResolveRouteApplied"
             (click)="applySelectedAlternateRoute()"
           >
-            {{ isApplyingRoute ? 'Applying...' : 'Apply Selected Alternate Route' }}
+            {{ isResolveRouteApplied ? 'Applied' : (isApplyingRoute ? 'Applying...' : 'Apply Selected Alternate Route') }}
           </button>
         </div>
       </aside>
+    </div>
+  </article>
+</div>
+
+<div
+  *ngIf="isVehicleOverviewModalOpen"
+  class="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/65 p-4"
+  role="dialog"
+  aria-modal="true"
+>
+  <article class="w-full max-w-3xl rounded-2xl border border-slate-300 bg-white p-4 shadow-2xl">
+    <div class="mb-3 flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
+      <div>
+        <h3 class="text-lg font-bold text-slate-900">Vehicle Overview</h3>
+        <p class="text-xs text-slate-600" *ngIf="vehicleOverview">
+          {{ vehicleOverview.vehicle.vehicleId }} | {{ vehicleOverview.vehicle.name }} | {{ vehicleOverview.vehicle.status }}
+        </p>
+      </div>
+      <button
+        type="button"
+        class="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+        (click)="closeVehicleOverviewModal()"
+      >
+        Close
+      </button>
+    </div>
+
+    <div *ngIf="isLoadingVehicleOverview" class="rounded-md bg-blue-50 p-3 text-sm font-medium text-blue-700">
+      Loading overview...
+    </div>
+
+    <div *ngIf="!isLoadingVehicleOverview && vehicleOverviewError" class="rounded-md bg-rose-50 p-3 text-sm font-medium text-rose-700">
+      {{ vehicleOverviewError }}
+    </div>
+
+    <div *ngIf="!isLoadingVehicleOverview && vehicleOverview" class="grid gap-4 md:grid-cols-2">
+      <section class="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <h4 class="text-sm font-bold text-slate-900">Trip Timing</h4>
+        <p class="text-sm text-slate-700">
+          <span class="font-semibold">Start:</span>
+          {{ vehicleOverview.trip.startTime ? (vehicleOverview.trip.startTime | date: 'medium') : 'Not started' }}
+        </p>
+        <p class="text-sm text-slate-700">
+          <span class="font-semibold">Reach:</span>
+          {{ vehicleOverview.trip.reachTime ? (vehicleOverview.trip.reachTime | date: 'medium') : 'Not reached yet' }}
+        </p>
+        <p class="text-sm text-slate-700"><span class="font-semibold">Trip Status:</span> {{ vehicleOverview.trip.status }}</p>
+        <p class="text-sm text-slate-700"><span class="font-semibold">Distance:</span> {{ vehicleOverview.trip.distanceKm | number: '1.1-2' }} km</p>
+        <p class="text-sm text-slate-700"><span class="font-semibold">Delay:</span> {{ vehicleOverview.trip.delayMinutes | number: '1.1-2' }} min</p>
+      </section>
+
+      <section class="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <h4 class="text-sm font-bold text-slate-900">Reroute Loss/Gain</h4>
+        <p class="text-sm text-slate-700"><span class="font-semibold">Events:</span> {{ vehicleOverview.rerouteImpact.totalEvents }}</p>
+        <p class="text-sm text-slate-700"><span class="font-semibold">Time Loss:</span> {{ vehicleOverview.rerouteImpact.timeLossMinutes | number: '1.1-2' }} min</p>
+        <p class="text-sm text-slate-700"><span class="font-semibold">Time Gain:</span> {{ vehicleOverview.rerouteImpact.timeGainMinutes | number: '1.1-2' }} min</p>
+        <p class="text-sm text-slate-700"><span class="font-semibold">Fuel Loss:</span> {{ vehicleOverview.rerouteImpact.fuelLossLiters | number: '1.3-3' }} L</p>
+        <p class="text-sm text-slate-700"><span class="font-semibold">Fuel Gain:</span> {{ vehicleOverview.rerouteImpact.fuelGainLiters | number: '1.3-3' }} L</p>
+        <div class="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          <span class="font-semibold">Budget Loss:</span>
+          Rs.{{ vehicleOverview.rerouteImpact.budgetLossInr | number: '1.2-2' }}
+        </div>
+        <div class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <span class="font-semibold">Budget Gain:</span>
+          Rs.{{ vehicleOverview.rerouteImpact.budgetGainInr | number: '1.2-2' }}
+        </div>
+        <p class="text-[11px] text-slate-500">
+          Fuel estimate: {{ vehicleOverview.assumptions.fuelLitersPerMinute }} L/min, Budget estimate: Rs.{{ vehicleOverview.assumptions.budgetPerFuelLiterInr }}/L
+        </p>
+      </section>
     </div>
   </article>
 </div>

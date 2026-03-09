@@ -1,15 +1,17 @@
-import { AfterViewInit, Component, NgZone, OnDestroy, OnInit } from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Component, NgZone, OnDestroy, OnInit } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { finalize, Subscription, switchMap, timeout } from 'rxjs';
 import { FleetApiService } from '../../core/services/fleet-api.service';
 import { FleetLiveService } from '../../core/services/fleet-live.service';
 import {
+  AlternateRouteOption,
   ApplyIncidentRoutePayload,
   HeatmapPoint,
   Incident,
   IncidentResolvePreview,
   RerouteEvent,
-  Vehicle
+  Vehicle,
+  VehicleOverview
 } from '../../core/models/fleet.models';
 
 declare const L: any;
@@ -35,18 +37,29 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
   selectedVehicleId: string | null = null;
   isLoadingSelectedRoute = false;
   isResolveModalOpen = false;
+  isVehicleOverviewModalOpen = false;
+  isLoadingVehicleOverview = false;
   isLoadingResolvePreview = false;
   isApplyingRoute = false;
+  isResolveRouteApplied = false;
   isAlternateRouteSelected = false;
+  selectedAlternateRouteId: string | null = null;
   resolveModalError = '';
+  resolveModalSuccess = '';
+  vehicleOverviewError = '';
   resolveModalIncident?: Incident;
   resolvePreview?: IncidentResolvePreview;
+  vehicleOverview?: VehicleOverview;
 
   private map?: any;
   private markers = new Map<string, any>();
   private sourceMarkers = new Map<string, any>();
   private destinationMarkers = new Map<string, any>();
   private routeLines = new Map<string, any>();
+  private routeCompletedLines = new Map<string, any>();
+  private primaryMapRoutePoints = new Map<string, Array<[number, number]>>();
+  private primaryMapRouteSignatures = new Map<string, string>();
+  private primaryMapRouteRequests = new Set<string>();
   private incidentMarkers = new Map<string, any>();
   private incidentRadiusLayers = new Map<string, any>();
   private heatLayers = new Map<string, any>();
@@ -67,19 +80,22 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
   private resolveMap?: any;
   private resolveTileLayer?: any;
   private resolveCurrentRouteLayer?: any;
-  private resolveAlternateRouteLayer?: any;
-  private resolveAlternateRouteHitLayer?: any;
+  private resolveAlternateRouteLayers = new Map<string, any>();
+  private resolveAlternateRouteHitLayers = new Map<string, any>();
+  private resolveAlternateRouteColors = new Map<string, string>();
   private resolveSourceMarker?: any;
   private resolveDestinationMarker?: any;
   private resolveVehicleMarker?: any;
   private resolveIncidentMarker?: any;
   private resolveHeatLayers: any[] = [];
   private resolveMapRenderTimer?: number;
+  private applyRouteWatchdogTimer?: number;
 
   constructor(
     private readonly fleetApi: FleetApiService,
     private readonly fleetLive: FleetLiveService,
-    private readonly ngZone: NgZone
+    private readonly ngZone: NgZone,
+    private readonly cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -119,134 +135,145 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       window.clearTimeout(this.resolveMapRenderTimer);
       this.resolveMapRenderTimer = undefined;
     }
+    if (this.applyRouteWatchdogTimer) {
+      window.clearTimeout(this.applyRouteWatchdogTimer);
+      this.applyRouteWatchdogTimer = undefined;
+    }
   }
 
   initMockVehicles(): void {
-    if (this.isInitializing || this.isStarting || this.isStopping || this.isResettingFresh) {
+    if (this.isInitializing || this.isStarting || this.isStopping) {
       return;
     }
-    this.isInitializing = true;
+    this.setInitializing(true);
     this.clearMessages();
     this.fleetApi
       .initMockVehicles()
       .pipe(
         timeout(20000),
         finalize(() => {
-          this.isInitializing = false;
+          this.setInitializing(false);
         })
       )
       .subscribe({
       next: (response) => {
-        this.message = `${response.count} mock vehicles initialized.`;
-        this.isSimulationRunning = false;
-        this.selectedVehicleId = null;
-        this.routeZoomedVehicleId = null;
-        this.selectedRoutePoints.clear();
-        this.loadVehicles();
-        this.loadSimulationStatus();
-        this.loadIncidents();
-        this.loadReroutes();
-        this.refreshHeatmap();
+        this.runInUiContext(() => {
+          this.message = `${response.count} mock vehicles initialized.`;
+          this.isSimulationRunning = false;
+          this.selectedVehicleId = null;
+          this.routeZoomedVehicleId = null;
+          this.selectedRoutePoints.clear();
+          this.loadVehicles();
+          this.loadSimulationStatus();
+          this.loadIncidents();
+          this.loadReroutes();
+          this.refreshHeatmap();
+        });
       },
       error: (error: unknown) => {
-        this.errorMessage =
-          this.isTimeoutError(error)
-            ? 'Initialize request timed out. Check backend connection and try again.'
-            : 'Failed to initialize mock vehicles.';
+        this.runInUiContext(() => {
+          this.errorMessage =
+            this.isTimeoutError(error)
+              ? 'Initialize request timed out. Check backend connection and try again.'
+              : 'Failed to initialize mock vehicles.';
+        });
       }
       });
   }
 
   startSimulation(): void {
     if (
-      this.isInitializing ||
       this.isStarting ||
       this.isStopping ||
-      this.isResettingFresh ||
       this.isSimulationRunning ||
       this.vehicles.length === 0
     ) {
       return;
     }
-    this.isStarting = true;
+    this.setStarting(true);
     this.clearMessages();
     this.fleetApi
       .startSimulation()
       .pipe(
         timeout(20000),
         finalize(() => {
-          this.isStarting = false;
+          this.setStarting(false);
         })
       )
       .subscribe({
       next: (response) => {
-        if (!response.started) {
-          this.errorMessage = response.reason || 'Unable to start simulation.';
-          return;
-        }
-        this.message = 'Simulation started.';
-        this.isSimulationRunning = true;
-        this.loadVehicles();
-        this.loadSimulationStatus();
+        this.runInUiContext(() => {
+          if (!response.started) {
+            this.errorMessage = response.reason || 'Unable to start simulation.';
+            return;
+          }
+          this.message = 'Simulation started.';
+          this.isSimulationRunning = true;
+          this.loadVehicles();
+          this.loadSimulationStatus();
+        });
       },
       error: (error: unknown) => {
-        const httpError = error as HttpErrorResponse;
-        this.errorMessage =
-          this.isTimeoutError(error)
-            ? 'Start request timed out. Check backend connection and try again.'
-            : httpError.error?.reason || httpError.error?.message || 'Failed to start simulation.';
-        if (httpError.error?.reason === 'Simulation already running.') {
-          this.isSimulationRunning = true;
-        }
+        this.runInUiContext(() => {
+          const httpError = error as HttpErrorResponse;
+          this.errorMessage =
+            this.isTimeoutError(error)
+              ? 'Start request timed out. Check backend connection and try again.'
+              : httpError.error?.reason || httpError.error?.message || 'Failed to start simulation.';
+          if (httpError.error?.reason === 'Simulation already running.') {
+            this.isSimulationRunning = true;
+          }
+        });
       }
       });
   }
 
   stopSimulation(): void {
-    if (this.isInitializing || this.isStarting || this.isStopping || this.isResettingFresh || !this.isSimulationRunning) {
+    if (this.isStarting || this.isStopping || !this.isSimulationRunning) {
       return;
     }
-    this.isStopping = true;
+    this.setStopping(true);
     this.clearMessages();
     this.fleetApi
       .stopSimulation()
       .pipe(
         timeout(20000),
         finalize(() => {
-          this.isStopping = false;
+          this.setStopping(false);
         })
       )
       .subscribe({
       next: () => {
-        this.message = 'Simulation stopped.';
-        this.isSimulationRunning = false;
-        this.loadVehicles();
-        this.loadSimulationStatus();
+        this.runInUiContext(() => {
+          this.message = 'Simulation stopped.';
+          this.isSimulationRunning = false;
+          this.loadVehicles();
+          this.loadSimulationStatus();
+        });
       },
       error: (error: unknown) => {
-        this.errorMessage =
-          this.isTimeoutError(error)
-            ? 'Stop request timed out. Check backend connection and try again.'
-            : 'Failed to stop simulation.';
+        this.runInUiContext(() => {
+          this.errorMessage =
+            this.isTimeoutError(error)
+              ? 'Stop request timed out. Check backend connection and try again.'
+              : 'Failed to stop simulation.';
+        });
       }
       });
   }
 
   injectIncidentNearFocusedVehicle(): void {
-    const vehicle =
-      this.vehicles.find((item) => item.vehicleId === this.selectedVehicleId) ||
-      this.vehicles.find((item) => item.status === 'moving') ||
-      this.vehicles[0];
+    const eligibleVehicles = this.vehicles.filter((item) => this.isVehicleBetweenSourceAndDestination(item));
 
-    if (!vehicle) {
-      this.errorMessage = 'No vehicle available to inject incident.';
+    if (!eligibleVehicles.length) {
+      this.errorMessage = 'No vehicle is currently between its source and destination to inject a road block.';
       return;
     }
 
     this.isInjectingIncident = true;
     this.clearMessages();
     this.fleetApi
-      .injectIncidentNearVehicle(vehicle.vehicleId)
+      .injectIncidentForTransitVehicles()
       .pipe(
         timeout(20000),
         finalize(() => {
@@ -254,8 +281,9 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
         })
       )
       .subscribe({
-        next: () => {
-          this.message = `Road block injected near ${vehicle.vehicleId}.`;
+        next: (response) => {
+          const affectedCount = response.affectedVehicleIds?.length || eligibleVehicles.length;
+          this.message = `Road blocks injected for ${affectedCount} active vehicle(s).`;
           this.loadIncidents();
         },
         error: (error: unknown) => {
@@ -267,22 +295,28 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   openResolveModal(incident: Incident): void {
-    if (this.isInitializing || this.isStarting || this.isStopping || this.isResettingFresh) {
+    if (this.isStarting || this.isStopping) {
       this.errorMessage = 'Wait for current action to finish before resolving incidents.';
       return;
     }
 
     this.resolveModalError = '';
+    this.resolveModalSuccess = '';
+    this.isResolveRouteApplied = false;
     this.isAlternateRouteSelected = false;
-    this.isApplyingRoute = false;
+    this.selectedAlternateRouteId = null;
+    this.setApplyingRoute(false);
     this.resolveModalIncident = incident;
     this.resolvePreview = this.buildLocalResolvePreview(incident);
     this.isLoadingResolvePreview = !this.resolvePreview;
     this.isResolveModalOpen = true;
     this.scheduleResolveMapRender();
 
+    const incidentVehicleHint = this.getVehicleIdHintFromIncidentReason(incident.reason);
+    const preferredVehicleId = incidentVehicleHint || this.selectedVehicleId || undefined;
+
     this.fleetApi
-      .getIncidentResolvePreview(incident.incidentId, this.selectedVehicleId || undefined)
+      .getIncidentResolvePreview(incident.incidentId, preferredVehicleId)
       .pipe(
         timeout(20000),
         finalize(() => {
@@ -322,9 +356,13 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
     this.resolveModalIncident = undefined;
     this.resolvePreview = undefined;
     this.resolveModalError = '';
+    this.resolveModalSuccess = '';
     this.isLoadingResolvePreview = false;
-    this.isApplyingRoute = false;
+    this.isResolveRouteApplied = false;
+    this.setApplyingRoute(false);
     this.isAlternateRouteSelected = false;
+    this.selectedAlternateRouteId = null;
+    this.clearApplyRouteWatchdog();
     this.destroyResolveMap();
     if (this.resolveMapRenderTimer) {
       window.clearTimeout(this.resolveMapRenderTimer);
@@ -333,7 +371,7 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   applySelectedAlternateRoute(): void {
-    if (!this.isAlternateRouteSelected || this.isApplyingRoute) {
+    if (!this.isAlternateRouteSelected || this.isApplyingRoute || this.isResolveRouteApplied) {
       return;
     }
 
@@ -346,48 +384,142 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       return;
     }
 
+    const selectedAlternateRoute = this.getSelectedAlternateRoute(preview);
     const payload: ApplyIncidentRoutePayload = {
       vehicleId: preview.vehicle.vehicleId,
-      routePoints: preview.alternateRoutePoints,
+      alternateRouteId: selectedAlternateRoute?.routeId,
       destination: preview.proposedDestination
     };
 
-    this.isApplyingRoute = true;
+    this.setApplyingRoute(true);
     this.resolveModalError = '';
+    this.resolveModalSuccess = '';
+    this.clearApplyRouteWatchdog();
+    this.applyRouteWatchdogTimer = window.setTimeout(() => {
+      if (!this.isApplyingRoute) {
+        return;
+      }
+      this.runInUiContext(() => {
+        this.setApplyingRoute(false);
+        this.resolveModalError = 'Apply request took too long. Please try again.';
+      });
+    }, 25000);
 
     this.fleetApi
       .applyIncidentRoute(preview.incident.incidentId, payload)
       .pipe(
         timeout(20000),
         finalize(() => {
-          this.isApplyingRoute = false;
+          this.setApplyingRoute(false);
+          this.clearApplyRouteWatchdog();
         })
       )
       .subscribe({
         next: (response) => {
-          this.message = `Alternate route applied and incident ${response.data.incident.incidentId} resolved.`;
-          this.selectedRoutePoints.delete(response.data.vehicle.vehicleId);
-          this.upsertVehicles([response.data.vehicle]);
-          this.loadVehicles();
-          this.loadIncidents();
-          this.loadReroutes();
-          this.refreshHeatmap();
-          this.closeResolveModal();
+          this.runInUiContext(() => {
+            this.setApplyingRoute(false);
+            this.clearApplyRouteWatchdog();
+            try {
+              const appliedIncidentId = response.data?.incident?.incidentId || preview.incident.incidentId;
+              const appliedVehicle = response.data?.vehicle;
+              this.message = `Alternate route applied and incident ${appliedIncidentId} resolved.`;
+              this.resolveModalSuccess = `Applied successfully. Incident ${appliedIncidentId} is resolved.`;
+              this.isResolveRouteApplied = true;
+              this.isAlternateRouteSelected = false;
+              if (this.resolvePreview) {
+                this.resolvePreview = {
+                  ...this.resolvePreview,
+                  incident: {
+                    ...this.resolvePreview.incident,
+                    status: 'resolved',
+                    resolvedAt: new Date().toISOString()
+                  }
+                };
+              }
+              this.resolveMap?.invalidateSize();
+              if (appliedVehicle) {
+                this.selectedRoutePoints.delete(appliedVehicle.vehicleId);
+                this.upsertVehicles([appliedVehicle]);
+              }
+              this.loadVehicles();
+              this.loadIncidents();
+              this.loadReroutes();
+              this.refreshHeatmap();
+            } catch (_error) {
+              this.errorMessage = 'Route was applied, but UI refresh failed. Reloading live data.';
+              this.resolveModalSuccess = 'Route applied. Live data refreshed.';
+              this.isResolveRouteApplied = true;
+              this.isAlternateRouteSelected = false;
+              this.loadVehicles();
+              this.loadIncidents();
+              this.loadReroutes();
+              this.refreshHeatmap();
+            }
+          });
         },
         error: (error: unknown) => {
-          const httpError = error as HttpErrorResponse;
-          this.resolveModalError = this.isTimeoutError(error)
-            ? 'Apply route timed out. Please try again.'
-            : httpError.error?.message || 'Failed to apply alternate route. Please try again.';
+          this.runInUiContext(() => {
+            this.setApplyingRoute(false);
+            this.clearApplyRouteWatchdog();
+            const httpError = error as HttpErrorResponse;
+            this.resolveModalError = this.isTimeoutError(error)
+              ? 'Apply route timed out. Please try again.'
+              : httpError.error?.message || 'Failed to apply alternate route. Please try again.';
+          });
         }
       });
   }
 
-  selectAlternateRouteFromPanel(): void {
+  selectAlternateRoute(routeId: string): void {
+    this.setAlternateRouteSelected(true, routeId);
+  }
+
+  get resolveAlternateOptions(): AlternateRouteOption[] {
     if (!this.resolvePreview) {
-      return;
+      return [];
     }
-    this.setAlternateRouteSelected(true);
+    return this.getResolveAlternateOptions(this.resolvePreview);
+  }
+
+  isAlternateRouteActive(routeId: string): boolean {
+    return this.isAlternateRouteSelected && this.selectedAlternateRouteId === routeId;
+  }
+
+  private getSelectedAlternateRoute(preview: IncidentResolvePreview): AlternateRouteOption | undefined {
+    const options = this.getResolveAlternateOptions(preview);
+    if (!options.length) {
+      return undefined;
+    }
+    if (this.selectedAlternateRouteId) {
+      const selected = options.find((option) => option.routeId === this.selectedAlternateRouteId);
+      if (selected) {
+        return selected;
+      }
+    }
+    return options[0];
+  }
+
+  private getResolveAlternateOptions(preview: IncidentResolvePreview): AlternateRouteOption[] {
+    const options = Array.isArray(preview.alternateRouteOptions) ? preview.alternateRouteOptions : [];
+    const validOptions = options.filter((option) => Array.isArray(option.routePoints) && option.routePoints.length >= 2);
+    if (validOptions.length) {
+      return validOptions;
+    }
+    if (Array.isArray(preview.alternateRoutePoints) && preview.alternateRoutePoints.length >= 2) {
+      return [
+        {
+          routeId: 'alt-1',
+          label: 'Alternate Route 1',
+          routePoints: preview.alternateRoutePoints
+        }
+      ];
+    }
+    return [];
+  }
+
+  private getAlternateRouteColor(index: number): string {
+    const palette = ['#ff1fa3', '#00d4ff'];
+    return palette[index % palette.length];
   }
 
   trackByVehicle(_index: number, vehicle: Vehicle): string {
@@ -402,8 +534,54 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
     return `${event.vehicleId}-${event.timestamp}`;
   }
 
+  openVehicleOverview(vehicle: Vehicle): void {
+    this.runInUiContext(() => {
+      this.vehicleOverviewError = '';
+      this.vehicleOverview = undefined;
+      this.isVehicleOverviewModalOpen = true;
+      this.isLoadingVehicleOverview = true;
+    });
+
+    this.fleetApi
+      .getVehicleOverview(vehicle.vehicleId)
+      .pipe(
+        timeout(20000),
+        finalize(() => {
+          this.runInUiContext(() => {
+            this.isLoadingVehicleOverview = false;
+          });
+        })
+      )
+      .subscribe({
+        next: (response) => {
+          this.runInUiContext(() => {
+            this.vehicleOverview = response.data;
+          });
+        },
+        error: (error: unknown) => {
+          this.runInUiContext(() => {
+            const httpError = error as HttpErrorResponse;
+            this.vehicleOverviewError = this.isTimeoutError(error)
+              ? 'Overview request timed out. Please try again.'
+              : httpError.error?.message || 'Unable to load vehicle overview.';
+          });
+        }
+      });
+  }
+
+  closeVehicleOverviewModal(): void {
+    this.isVehicleOverviewModalOpen = false;
+    this.isLoadingVehicleOverview = false;
+    this.vehicleOverviewError = '';
+    this.vehicleOverview = undefined;
+  }
+
   get isAnalyzingVehicle(): boolean {
     return Boolean(this.selectedVehicleId);
+  }
+
+  get hasInjectableVehicle(): boolean {
+    return this.vehicles.some((vehicle) => this.isVehicleBetweenSourceAndDestination(vehicle));
   }
 
   get congestionSummary(): string {
@@ -416,9 +594,6 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   async analyzeVehicle(vehicle: Vehicle): Promise<void> {
-    if (this.isResettingFresh) {
-      return;
-    }
     this.selectedVehicleId = vehicle.vehicleId;
     this.routeZoomedVehicleId = null;
     this.clearMessages();
@@ -428,9 +603,6 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   resetVehicleFocus(): void {
-    if (this.isResettingFresh) {
-      return;
-    }
     this.selectedVehicleId = null;
     this.routeZoomedVehicleId = null;
     this.clearMessages();
@@ -451,7 +623,34 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
     this.resolveMapRenderTimer = window.setTimeout(() => {
       this.resolveMapRenderTimer = undefined;
       this.renderResolvePreviewMap(0);
+      window.setTimeout(() => {
+        this.recoverResolveMapIfBlank();
+      }, 900);
     }, 30);
+  }
+
+  private recoverResolveMapIfBlank(): void {
+    if (!this.isResolveModalOpen) {
+      return;
+    }
+    if (this.isApplyingRoute) {
+      this.resolveMap?.invalidateSize();
+      return;
+    }
+
+    const mapElement = document.getElementById('incident-resolve-map');
+    if (!mapElement) {
+      return;
+    }
+
+    const paneCount = mapElement.querySelectorAll('.leaflet-pane').length;
+    if (paneCount > 0) {
+      this.resolveMap?.invalidateSize();
+      return;
+    }
+
+    this.destroyResolveMap();
+    this.scheduleResolveMapRender();
   }
 
   private renderResolvePreviewMap(attempt: number): void {
@@ -472,213 +671,237 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       return;
     }
 
-    const fallbackVehicle =
-      this.vehicles.find((item) => item.vehicleId === this.selectedVehicleId) ||
-      this.vehicles.find((item) => item.status === 'moving') ||
-      this.vehicles[0];
-    const fallbackCenter =
-      this.resolvePreview?.vehicle?.currentLocation || fallbackVehicle?.currentLocation || this.resolveModalIncident?.location;
-    const initialCenter: [number, number] = fallbackCenter
-      ? [fallbackCenter.lat, fallbackCenter.lng]
-      : [13.0827, 80.2707];
+    try {
+      const fallbackVehicle =
+        this.vehicles.find((item) => item.vehicleId === this.selectedVehicleId) ||
+        this.vehicles.find((item) => item.status === 'moving') ||
+        this.vehicles[0];
+      const fallbackCenter =
+        this.resolvePreview?.vehicle?.currentLocation || fallbackVehicle?.currentLocation || this.resolveModalIncident?.location;
+      const initialCenter: [number, number] = fallbackCenter
+        ? [fallbackCenter.lat, fallbackCenter.lng]
+        : [13.0827, 80.2707];
 
-    if (!this.resolveMap) {
-      this.resolveMap = L.map('incident-resolve-map', { zoomControl: true, scrollWheelZoom: true }).setView(
-        initialCenter,
-        12
-      );
-    }
-
-    if (!this.resolveTileLayer) {
-      this.resolveTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(this.resolveMap);
-    }
-
-    this.clearResolvePreviewLayers();
-
-    if (!this.resolvePreview) {
-      // Base map fallback so popup always shows a map even if preview API is slow/fails.
-      if (fallbackCenter) {
-        this.resolveMap.setView([fallbackCenter.lat, fallbackCenter.lng], 12);
+      if (!this.resolveMap) {
+        this.resolveMap = L.map('incident-resolve-map', { zoomControl: true, scrollWheelZoom: true }).setView(
+          initialCenter,
+          12
+        );
       }
 
-      if (this.resolveModalIncident) {
-        this.resolveIncidentMarker = L.circleMarker(
-          [this.resolveModalIncident.location.lat, this.resolveModalIncident.location.lng],
-          {
-            radius: 8,
-            color: '#dc2626',
+      if (!this.resolveTileLayer) {
+        this.resolveTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(this.resolveMap);
+      }
+
+      this.clearResolvePreviewLayers();
+
+      if (!this.resolvePreview) {
+        // Base map fallback so popup always shows a map even if preview API is slow/fails.
+        if (fallbackCenter) {
+          this.resolveMap.setView([fallbackCenter.lat, fallbackCenter.lng], 12);
+        }
+
+        if (this.resolveModalIncident) {
+          this.resolveIncidentMarker = L.marker(
+            [this.resolveModalIncident.location.lat, this.resolveModalIncident.location.lng],
+            { icon: this.getIncidentBlockIcon() }
+          )
+            .addTo(this.resolveMap)
+            .bindPopup(`<b>${this.resolveModalIncident.incidentId}</b><br/>${this.resolveModalIncident.reason}`);
+        }
+
+        if (fallbackVehicle) {
+          const vehicleMarkerIcon = L.divIcon({
+            className: 'resolve-vehicle-pin',
+            html:
+              '<div style="width:20px;height:20px;border-radius:50%;background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:2px solid #fff;">V</div>',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+          });
+          this.resolveVehicleMarker = L.marker([fallbackVehicle.currentLocation.lat, fallbackVehicle.currentLocation.lng], {
+            icon: vehicleMarkerIcon
+          })
+            .addTo(this.resolveMap)
+            .bindPopup(`<b>${fallbackVehicle.vehicleId}</b><br/>Current Position`);
+        }
+
+        for (const point of this.heatmapPoints) {
+          const color = this.getHeatColor(point.intensity);
+          const visibleIntensity = Math.max(point.intensity, 0.35);
+          const heatCircle = L.circle([point.lat, point.lng], {
+            radius: 120 + visibleIntensity * 220,
+            color,
             weight: 2,
-            fillColor: '#ef4444',
-            fillOpacity: 0.85
-          }
-        )
-          .addTo(this.resolveMap)
-          .bindPopup(`<b>${this.resolveModalIncident.incidentId}</b><br/>${this.resolveModalIncident.reason}`);
+            fillColor: color,
+            fillOpacity: 0.28 + visibleIntensity * 0.35,
+            interactive: false
+          }).addTo(this.resolveMap);
+          this.resolveHeatLayers.push(heatCircle);
+        }
+
+        this.resolveMap.invalidateSize();
+        return;
       }
 
-      if (fallbackVehicle) {
-        const vehicleMarkerIcon = L.divIcon({
-          className: 'resolve-vehicle-pin',
-          html:
-            '<div style="width:20px;height:20px;border-radius:50%;background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:2px solid #fff;">V</div>',
-          iconSize: [20, 20],
-          iconAnchor: [10, 10]
-        });
-        this.resolveVehicleMarker = L.marker([fallbackVehicle.currentLocation.lat, fallbackVehicle.currentLocation.lng], {
-          icon: vehicleMarkerIcon
+      const currentPoints = this.resolvePreview.currentRoutePoints.map((point) => [point.lat, point.lng] as [number, number]);
+      const alternateOptions = this.getResolveAlternateOptions(this.resolvePreview);
+
+      this.resolveCurrentRouteLayer = L.polyline(currentPoints, {
+        color: '#2563eb',
+        weight: 5,
+        opacity: 0.9
+      }).addTo(this.resolveMap);
+
+      for (const [index, option] of alternateOptions.entries()) {
+        const alternatePoints = option.routePoints.map((point) => [point.lat, point.lng] as [number, number]);
+        if (alternatePoints.length < 2) {
+          continue;
+        }
+
+        const color = this.getAlternateRouteColor(index);
+        this.resolveAlternateRouteColors.set(option.routeId, color);
+
+        const selectAlternateRoute = (event?: any) => {
+          event?.originalEvent?.preventDefault?.();
+          event?.originalEvent?.stopPropagation?.();
+          this.ngZone.run(() => {
+            this.setAlternateRouteSelected(true, option.routeId);
+          });
+        };
+
+        const routeLayer = L.polyline(alternatePoints, {
+          color,
+          weight: 4,
+          opacity: 0.95,
+          dashArray: '11 7'
         })
           .addTo(this.resolveMap)
-          .bindPopup(`<b>${fallbackVehicle.vehicleId}</b><br/>Current Position`);
+          .on('click', selectAlternateRoute)
+          .on('mousedown', selectAlternateRoute)
+          .on('touchstart', selectAlternateRoute);
+        this.resolveAlternateRouteLayers.set(option.routeId, routeLayer);
+
+        const hitLayer = L.polyline(alternatePoints, {
+          color: '#000000',
+          weight: 20,
+          opacity: 0,
+          interactive: true,
+          bubblingMouseEvents: false
+        })
+          .addTo(this.resolveMap)
+          .on('click', selectAlternateRoute)
+          .on('mousedown', selectAlternateRoute)
+          .on('touchstart', selectAlternateRoute);
+        this.resolveAlternateRouteHitLayers.set(option.routeId, hitLayer);
       }
 
-      for (const point of this.heatmapPoints) {
+      this.resolveSourceMarker = L.marker(
+        [this.resolvePreview.vehicle.source.lat, this.resolvePreview.vehicle.source.lng],
+        { icon: this.getSourceIcon() }
+      )
+        .addTo(this.resolveMap)
+        .bindPopup(`<b>${this.resolvePreview.vehicle.vehicleId}</b><br/>Source`);
+
+      this.resolveDestinationMarker = L.marker(
+        [this.resolvePreview.proposedDestination.lat, this.resolvePreview.proposedDestination.lng],
+        { icon: this.getDestinationIcon() }
+      )
+        .addTo(this.resolveMap)
+        .bindPopup(`<b>${this.resolvePreview.vehicle.vehicleId}</b><br/>Proposed Destination`);
+
+      const vehicleMarkerIcon = L.divIcon({
+        className: 'resolve-vehicle-pin',
+        html:
+          '<div style="width:20px;height:20px;border-radius:50%;background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:2px solid #fff;">V</div>',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+      });
+      this.resolveVehicleMarker = L.marker(
+        [this.resolvePreview.vehicle.currentLocation.lat, this.resolvePreview.vehicle.currentLocation.lng],
+        { icon: vehicleMarkerIcon }
+      )
+        .addTo(this.resolveMap)
+        .bindPopup(`<b>${this.resolvePreview.vehicle.vehicleId}</b><br/>Current Position`);
+
+      this.resolveIncidentMarker = L.marker(
+        [this.resolvePreview.incident.location.lat, this.resolvePreview.incident.location.lng],
+        { icon: this.getIncidentBlockIcon() }
+      )
+        .addTo(this.resolveMap)
+        .bindPopup(`<b>${this.resolvePreview.incident.incidentId}</b><br/>${this.resolvePreview.incident.reason}`);
+
+      for (const point of this.resolvePreview.heatmapPoints) {
         const color = this.getHeatColor(point.intensity);
+        const visibleIntensity = Math.max(point.intensity, 0.35);
         const heatCircle = L.circle([point.lat, point.lng], {
-          radius: 70 + point.intensity * 160,
+          radius: 120 + visibleIntensity * 220,
           color,
-          weight: 1,
+          weight: 2,
           fillColor: color,
-          fillOpacity: 0.17 + point.intensity * 0.2,
+          fillOpacity: 0.28 + visibleIntensity * 0.35,
           interactive: false
         }).addTo(this.resolveMap);
         this.resolveHeatLayers.push(heatCircle);
       }
 
-      this.resolveMap.invalidateSize();
-      return;
-    }
-
-    const currentPoints = this.resolvePreview.currentRoutePoints.map((point) => [point.lat, point.lng] as [number, number]);
-    const alternatePoints = this.resolvePreview.alternateRoutePoints.map(
-      (point) => [point.lat, point.lng] as [number, number]
-    );
-
-    this.resolveCurrentRouteLayer = L.polyline(currentPoints, {
-      color: '#2563eb',
-      weight: 5,
-      opacity: 0.9
-    }).addTo(this.resolveMap);
-
-    const selectAlternateRoute = (event?: any) => {
-      event?.originalEvent?.preventDefault?.();
-      event?.originalEvent?.stopPropagation?.();
-      this.ngZone.run(() => {
-        this.setAlternateRouteSelected(true);
-      });
-    };
-
-    this.resolveAlternateRouteLayer = L.polyline(alternatePoints, {
-      color: '#f97316',
-      weight: 4,
-      opacity: 0.9,
-      dashArray: '10 8'
-    })
-      .addTo(this.resolveMap)
-      .on('click', selectAlternateRoute)
-      .on('mousedown', selectAlternateRoute)
-      .on('touchstart', selectAlternateRoute);
-
-    // Wide transparent hit layer to make alternate-route click highly reliable.
-    this.resolveAlternateRouteHitLayer = L.polyline(alternatePoints, {
-      color: '#000000',
-      weight: 20,
-      opacity: 0,
-      interactive: true,
-      bubblingMouseEvents: false
-    })
-      .addTo(this.resolveMap)
-      .on('click', selectAlternateRoute)
-      .on('mousedown', selectAlternateRoute)
-      .on('touchstart', selectAlternateRoute);
-
-    this.resolveSourceMarker = L.marker(
-      [this.resolvePreview.vehicle.source.lat, this.resolvePreview.vehicle.source.lng],
-      { icon: this.getSourceIcon() }
-    )
-      .addTo(this.resolveMap)
-      .bindPopup(`<b>${this.resolvePreview.vehicle.vehicleId}</b><br/>Source`);
-
-    this.resolveDestinationMarker = L.marker(
-      [this.resolvePreview.proposedDestination.lat, this.resolvePreview.proposedDestination.lng],
-      { icon: this.getDestinationIcon() }
-    )
-      .addTo(this.resolveMap)
-      .bindPopup(`<b>${this.resolvePreview.vehicle.vehicleId}</b><br/>Proposed Destination`);
-
-    const vehicleMarkerIcon = L.divIcon({
-      className: 'resolve-vehicle-pin',
-      html:
-        '<div style="width:20px;height:20px;border-radius:50%;background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:2px solid #fff;">V</div>',
-      iconSize: [20, 20],
-      iconAnchor: [10, 10]
-    });
-    this.resolveVehicleMarker = L.marker(
-      [this.resolvePreview.vehicle.currentLocation.lat, this.resolvePreview.vehicle.currentLocation.lng],
-      { icon: vehicleMarkerIcon }
-    )
-      .addTo(this.resolveMap)
-      .bindPopup(`<b>${this.resolvePreview.vehicle.vehicleId}</b><br/>Current Position`);
-
-    this.resolveIncidentMarker = L.circleMarker(
-      [this.resolvePreview.incident.location.lat, this.resolvePreview.incident.location.lng],
-      {
-        radius: 8,
-        color: '#dc2626',
-        weight: 2,
-        fillColor: '#ef4444',
-        fillOpacity: 0.85
+      for (const routeLayer of this.resolveAlternateRouteLayers.values()) {
+        routeLayer.bringToFront();
       }
-    )
-      .addTo(this.resolveMap)
-      .bindPopup(`<b>${this.resolvePreview.incident.incidentId}</b><br/>${this.resolvePreview.incident.reason}`);
+      for (const hitLayer of this.resolveAlternateRouteHitLayers.values()) {
+        hitLayer.bringToFront();
+      }
 
-    for (const point of this.resolvePreview.heatmapPoints) {
-      const color = this.getHeatColor(point.intensity);
-      const heatCircle = L.circle([point.lat, point.lng], {
-        radius: 70 + point.intensity * 160,
-        color,
-        weight: 1,
-        fillColor: color,
-        fillOpacity: 0.17 + point.intensity * 0.2,
-        interactive: false
-      }).addTo(this.resolveMap);
-      this.resolveHeatLayers.push(heatCircle);
+      const boundsPoints = [
+        ...currentPoints,
+        [this.resolvePreview.vehicle.source.lat, this.resolvePreview.vehicle.source.lng] as [number, number],
+        [this.resolvePreview.proposedDestination.lat, this.resolvePreview.proposedDestination.lng] as [number, number],
+        [this.resolvePreview.vehicle.currentLocation.lat, this.resolvePreview.vehicle.currentLocation.lng] as [number, number],
+        [this.resolvePreview.incident.location.lat, this.resolvePreview.incident.location.lng] as [number, number]
+      ];
+      for (const option of alternateOptions) {
+        boundsPoints.push(...option.routePoints.map((point) => [point.lat, point.lng] as [number, number]));
+      }
+      this.resolveMap.fitBounds(L.latLngBounds(boundsPoints), { padding: [20, 20], maxZoom: 15 });
+
+      if (
+        this.selectedAlternateRouteId &&
+        !alternateOptions.some((option) => option.routeId === this.selectedAlternateRouteId)
+      ) {
+        this.selectedAlternateRouteId = null;
+        this.isAlternateRouteSelected = false;
+      }
+      this.highlightAlternateRoute();
+      this.resolveMap.invalidateSize();
+    } catch (_error) {
+      this.resolveModalError = 'Unable to render route map right now. Close and reopen Resolve.';
     }
-
-    this.resolveAlternateRouteLayer?.bringToFront();
-    this.resolveAlternateRouteHitLayer?.bringToFront();
-
-    const boundsPoints = [
-      ...currentPoints,
-      ...alternatePoints,
-      [this.resolvePreview.vehicle.source.lat, this.resolvePreview.vehicle.source.lng] as [number, number],
-      [this.resolvePreview.proposedDestination.lat, this.resolvePreview.proposedDestination.lng] as [number, number],
-      [this.resolvePreview.vehicle.currentLocation.lat, this.resolvePreview.vehicle.currentLocation.lng] as [number, number],
-      [this.resolvePreview.incident.location.lat, this.resolvePreview.incident.location.lng] as [number, number]
-    ];
-    this.resolveMap.fitBounds(L.latLngBounds(boundsPoints), { padding: [20, 20], maxZoom: 15 });
-
-    this.highlightAlternateRoute(this.isAlternateRouteSelected);
-    this.resolveMap.invalidateSize();
   }
 
-  private setAlternateRouteSelected(selected: boolean): void {
+  private setAlternateRouteSelected(selected: boolean, routeId?: string): void {
     this.isAlternateRouteSelected = selected;
-    this.highlightAlternateRoute(selected);
-  }
-
-  private highlightAlternateRoute(selected: boolean): void {
-    if (!this.resolveAlternateRouteLayer) {
+    if (!selected) {
+      this.selectedAlternateRouteId = null;
+      this.highlightAlternateRoute();
       return;
     }
-    this.resolveAlternateRouteLayer.setStyle(
-      selected
-        ? { color: '#16a34a', weight: 6, opacity: 1, dashArray: undefined }
-        : { color: '#f97316', weight: 4, opacity: 0.9, dashArray: '10 8' }
-    );
+
+    this.selectedAlternateRouteId = routeId || this.selectedAlternateRouteId || null;
+    this.highlightAlternateRoute();
+  }
+
+  private highlightAlternateRoute(): void {
+    for (const [routeId, routeLayer] of this.resolveAlternateRouteLayers.entries()) {
+      const color = this.resolveAlternateRouteColors.get(routeId) || '#f97316';
+      const selected = this.isAlternateRouteSelected && this.selectedAlternateRouteId === routeId;
+      routeLayer.setStyle(
+        selected
+          ? { color, weight: 7, opacity: 1, dashArray: undefined }
+          : { color, weight: 4, opacity: 0.95, dashArray: '11 7' }
+      );
+    }
   }
 
   private clearResolvePreviewLayers(): void {
@@ -688,8 +911,6 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
 
     const singleLayers = [
       this.resolveCurrentRouteLayer,
-      this.resolveAlternateRouteLayer,
-      this.resolveAlternateRouteHitLayer,
       this.resolveSourceMarker,
       this.resolveDestinationMarker,
       this.resolveVehicleMarker,
@@ -706,10 +927,17 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       this.resolveMap.removeLayer(heatLayer);
     }
     this.resolveHeatLayers = [];
+    for (const routeLayer of this.resolveAlternateRouteLayers.values()) {
+      this.resolveMap.removeLayer(routeLayer);
+    }
+    for (const hitLayer of this.resolveAlternateRouteHitLayers.values()) {
+      this.resolveMap.removeLayer(hitLayer);
+    }
+    this.resolveAlternateRouteLayers.clear();
+    this.resolveAlternateRouteHitLayers.clear();
+    this.resolveAlternateRouteColors.clear();
 
     this.resolveCurrentRouteLayer = undefined;
-    this.resolveAlternateRouteLayer = undefined;
-    this.resolveAlternateRouteHitLayer = undefined;
     this.resolveSourceMarker = undefined;
     this.resolveDestinationMarker = undefined;
     this.resolveVehicleMarker = undefined;
@@ -759,7 +987,6 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
 
   resetAllAndStartFresh(): void {
     if (
-      this.isInitializing ||
       this.isStarting ||
       this.isStopping ||
       this.isInjectingIncident ||
@@ -769,59 +996,145 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       return;
     }
 
-    this.isResettingFresh = true;
+    this.setResettingFresh(true);
     this.clearMessages();
-    if (this.isResolveModalOpen) {
-      this.closeResolveModal();
-    }
 
-    this.selectedVehicleId = null;
-    this.routeZoomedVehicleId = null;
-    this.selectedRoutePoints.clear();
-    if (this.selectedRouteLine && this.map) {
-      this.map.removeLayer(this.selectedRouteLine);
-      this.selectedRouteLine = undefined;
-    }
+    try {
+      if (this.isResolveModalOpen) {
+        this.closeResolveModal();
+      }
+      if (this.isVehicleOverviewModalOpen) {
+        this.closeVehicleOverviewModal();
+      }
 
-    this.fleetApi
-      .initMockVehicles()
-      .pipe(
-        timeout(20000),
-        switchMap(() => this.fleetApi.startSimulation().pipe(timeout(20000))),
-        finalize(() => {
-          this.isResettingFresh = false;
-        })
-      )
-      .subscribe({
-        next: (startResponse) => {
-          if (!startResponse.started) {
-            this.errorMessage = startResponse.reason || 'Reset completed, but simulation could not start.';
-            this.isSimulationRunning = false;
-          } else {
-            this.message = 'All state reset. Initialized and started fresh simulation.';
-            this.isSimulationRunning = true;
+      this.selectedVehicleId = null;
+      this.routeZoomedVehicleId = null;
+      this.selectedRoutePoints.clear();
+      if (this.selectedRouteLine && this.map) {
+        this.map.removeLayer(this.selectedRouteLine);
+        this.selectedRouteLine = undefined;
+      }
+
+      this.fleetApi
+        .initMockVehicles()
+        .pipe(
+          timeout(20000),
+          switchMap(() => this.fleetApi.startSimulation().pipe(timeout(20000))),
+          finalize(() => {
+            this.setResettingFresh(false);
+          })
+        )
+        .subscribe({
+          next: (startResponse) => {
+            if (!startResponse.started) {
+              this.errorMessage = startResponse.reason || 'Reset completed, but simulation could not start.';
+              this.isSimulationRunning = false;
+            } else {
+              this.message = 'All state reset. Initialized and started fresh simulation.';
+              this.isSimulationRunning = true;
+            }
+            this.loadVehicles();
+            this.loadSimulationStatus();
+            this.loadIncidents();
+            this.loadReroutes();
+            this.refreshHeatmap();
+          },
+          error: (error: unknown) => {
+            const httpError = error as HttpErrorResponse;
+            this.errorMessage =
+              this.isTimeoutError(error)
+                ? 'Reset timed out. Backend may be unavailable. Try again.'
+                : httpError.error?.reason ||
+                  httpError.error?.message ||
+                  'Failed to reset and initialize fresh state.';
+            this.loadVehicles();
+            this.loadSimulationStatus();
+            this.loadIncidents();
+            this.loadReroutes();
+            this.refreshHeatmap();
           }
-          this.loadVehicles();
-          this.loadSimulationStatus();
-          this.loadIncidents();
-          this.loadReroutes();
-          this.refreshHeatmap();
-        },
-        error: (error: unknown) => {
-          const httpError = error as HttpErrorResponse;
-          this.errorMessage =
-            this.isTimeoutError(error)
-              ? 'Reset timed out. Backend may be unavailable. Try again.'
-              : httpError.error?.reason ||
-                httpError.error?.message ||
-                'Failed to reset and initialize fresh state.';
-          this.loadVehicles();
-          this.loadSimulationStatus();
-          this.loadIncidents();
-          this.loadReroutes();
-          this.refreshHeatmap();
-        }
-      });
+        });
+    } catch (_error) {
+      this.setResettingFresh(false);
+      this.errorMessage = 'Failed to reset and initialize fresh state.';
+    }
+  }
+
+  private setResettingFresh(value: boolean): void {
+    if (NgZone.isInAngularZone()) {
+      this.isResettingFresh = value;
+      return;
+    }
+    this.ngZone.run(() => {
+      this.isResettingFresh = value;
+    });
+  }
+
+  private setInitializing(value: boolean): void {
+    if (NgZone.isInAngularZone()) {
+      this.isInitializing = value;
+      return;
+    }
+    this.ngZone.run(() => {
+      this.isInitializing = value;
+    });
+  }
+
+  private setStarting(value: boolean): void {
+    if (NgZone.isInAngularZone()) {
+      this.isStarting = value;
+      return;
+    }
+    this.ngZone.run(() => {
+      this.isStarting = value;
+    });
+  }
+
+  private setStopping(value: boolean): void {
+    if (NgZone.isInAngularZone()) {
+      this.isStopping = value;
+      return;
+    }
+    this.ngZone.run(() => {
+      this.isStopping = value;
+    });
+  }
+
+  private setApplyingRoute(value: boolean): void {
+    if (NgZone.isInAngularZone()) {
+      this.isApplyingRoute = value;
+      return;
+    }
+    this.ngZone.run(() => {
+      this.isApplyingRoute = value;
+    });
+  }
+
+  private clearApplyRouteWatchdog(): void {
+    if (!this.applyRouteWatchdogTimer) {
+      return;
+    }
+    window.clearTimeout(this.applyRouteWatchdogTimer);
+    this.applyRouteWatchdogTimer = undefined;
+  }
+
+  private runInUiContext(callback: () => void): void {
+    const execute = () => {
+      callback();
+      try {
+        this.cdr.detectChanges();
+      } catch (_error) {
+        // no-op: detectChanges can throw if view is already destroyed.
+      }
+    };
+
+    if (NgZone.isInAngularZone()) {
+      execute();
+      return;
+    }
+    this.ngZone.run(() => {
+      execute();
+    });
   }
 
   private loadVehicles(): void {
@@ -969,6 +1282,38 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
 
     this.vehicles = Array.from(byVehicleId.values()).sort((a, b) => a.vehicleId.localeCompare(b.vehicleId));
     this.renderVehiclesOnMap();
+    this.syncResolvePreviewVehicleWithLiveData(updatedVehicles);
+  }
+
+  private syncResolvePreviewVehicleWithLiveData(updatedVehicles: Vehicle[]): void {
+    if (!this.isResolveModalOpen || !this.resolvePreview?.vehicle) {
+      return;
+    }
+
+    const targetVehicleId = this.resolvePreview.vehicle.vehicleId;
+    const latestVehicle =
+      updatedVehicles.find((vehicle) => vehicle.vehicleId === targetVehicleId) ||
+      this.vehicles.find((vehicle) => vehicle.vehicleId === targetVehicleId);
+
+    if (!latestVehicle) {
+      return;
+    }
+
+    this.resolvePreview = {
+      ...this.resolvePreview,
+      vehicle: {
+        ...this.resolvePreview.vehicle,
+        currentLocation: latestVehicle.currentLocation,
+        status: latestVehicle.status,
+        speedKmh: latestVehicle.speedKmh,
+        lastUpdated: latestVehicle.lastUpdated
+      }
+    };
+
+    if (this.resolveVehicleMarker) {
+      this.resolveVehicleMarker.setLatLng([latestVehicle.currentLocation.lat, latestVehicle.currentLocation.lng]);
+      this.resolveVehicleMarker.setPopupContent(`<b>${targetVehicleId}</b><br/>Current Position`);
+    }
   }
 
   private shouldKeepExistingVehicle(existing: Vehicle, incoming: Vehicle): boolean {
@@ -977,10 +1322,6 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
 
     if (existingTimestamp !== null && incomingTimestamp !== null && existingTimestamp > incomingTimestamp) {
       return true;
-    }
-
-    if (existingTimestamp === incomingTimestamp) {
-      return this.getStatusRank(existing.status) > this.getStatusRank(incoming.status);
     }
 
     return false;
@@ -994,14 +1335,53 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
     return Number.isFinite(timestamp) ? timestamp : null;
   }
 
-  private getStatusRank(status: Vehicle['status']): number {
-    if (status === 'reached') {
-      return 2;
+  private isVehicleBetweenSourceAndDestination(vehicle: Vehicle): boolean {
+    if (vehicle.status === 'reached') {
+      return false;
     }
-    if (status === 'moving') {
-      return 1;
+
+    const source = vehicle.source;
+    const destination = vehicle.destination;
+    const current = vehicle.currentLocation;
+
+    const routeDistanceMeters = this.getDistanceMeters(source, destination);
+    if (routeDistanceMeters < 20) {
+      return false;
     }
-    return 0;
+
+    const distanceFromSourceMeters = this.getDistanceMeters(source, current);
+    const distanceToDestinationMeters = this.getDistanceMeters(current, destination);
+
+    // Ensure the vehicle is in transit between endpoints and not parked at either end.
+    const endpointPaddingMeters = Math.min(60, routeDistanceMeters * 0.05);
+    if (distanceFromSourceMeters <= endpointPaddingMeters || distanceToDestinationMeters <= endpointPaddingMeters) {
+      return false;
+    }
+
+    // Allow route curvature/noise but keep position on the source-destination trip window.
+    const maxPathStretch = 1.45;
+    const traveledPathMeters = distanceFromSourceMeters + distanceToDestinationMeters;
+    return traveledPathMeters <= routeDistanceMeters * maxPathStretch;
+  }
+
+  private getDistanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+    const earthRadiusMeters = 6371000;
+    const toRadians = (value: number) => (value * Math.PI) / 180;
+    const lat1 = toRadians(a.lat);
+    const lat2 = toRadians(b.lat);
+    const dLat = lat2 - lat1;
+    const dLng = toRadians(b.lng - a.lng);
+
+    const sinDLat = Math.sin(dLat / 2);
+    const sinDLng = Math.sin(dLng / 2);
+    const haversine =
+      sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
+    return 2 * earthRadiusMeters * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+  }
+
+  private getVehicleIdHintFromIncidentReason(reason: string): string | undefined {
+    const match = String(reason || '').match(/Block near ([A-Za-z0-9-]+)/);
+    return match ? match[1] : undefined;
   }
 
   private renderVehiclesOnMap(): void {
@@ -1013,11 +1393,14 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       ? this.vehicles.filter((vehicle) => vehicle.vehicleId === this.selectedVehicleId)
       : this.vehicles;
     const activeIds = new Set(vehiclesToRender.map((vehicle) => vehicle.vehicleId));
+    const knownVehicleIds = new Set(this.vehicles.map((vehicle) => vehicle.vehicleId));
 
     this.removeInactiveLayers(this.markers, activeIds);
     this.removeInactiveLayers(this.sourceMarkers, activeIds);
     this.removeInactiveLayers(this.destinationMarkers, activeIds);
     this.removeInactiveLayers(this.routeLines, activeIds);
+    this.removeInactiveLayers(this.routeCompletedLines, activeIds);
+    this.removeInactivePrimaryRouteCache(knownVehicleIds);
 
     for (const vehicle of vehiclesToRender) {
       const markerColor = this.getMarkerColor(vehicle.status);
@@ -1066,24 +1449,39 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       }
 
       if (!this.selectedVehicleId) {
-        const points = [
-          [vehicle.source.lat, vehicle.source.lng],
-          [vehicle.currentLocation.lat, vehicle.currentLocation.lng],
-          [vehicle.destination.lat, vehicle.destination.lng]
-        ];
+        const routeSignature = this.getPrimaryMapRouteSignature(vehicle);
+        const cachedRoutePoints =
+          this.primaryMapRouteSignatures.get(vehicle.vehicleId) === routeSignature
+            ? this.primaryMapRoutePoints.get(vehicle.vehicleId)
+            : undefined;
+        const points: Array<[number, number]> =
+          cachedRoutePoints && cachedRoutePoints.length > 1
+            ? cachedRoutePoints
+            : [
+                [vehicle.source.lat, vehicle.source.lng] as [number, number],
+                [vehicle.currentLocation.lat, vehicle.currentLocation.lng] as [number, number],
+                [vehicle.destination.lat, vehicle.destination.lng] as [number, number]
+              ];
 
-        const existingLine = this.routeLines.get(vehicle.vehicleId);
-        if (existingLine) {
-          existingLine.setLatLngs(points);
-        } else {
-          const line = L.polyline(points, { color: markerColor, weight: 3, opacity: 0.8 }).addTo(this.map);
-          this.routeLines.set(vehicle.vehicleId, line);
-        }
+        this.upsertProgressRouteLines(vehicle.vehicleId, points, vehicle.currentLocation);
+
+        this.ensurePrimaryMapRoadRoute(vehicle, routeSignature);
       }
     }
 
     if (this.selectedVehicleId && vehiclesToRender.length === 1) {
       const selectedVehicle = vehiclesToRender[0];
+      const remainingLine = this.routeLines.get(selectedVehicle.vehicleId);
+      if (remainingLine && this.map) {
+        this.map.removeLayer(remainingLine);
+        this.routeLines.delete(selectedVehicle.vehicleId);
+      }
+      const completedLine = this.routeCompletedLines.get(selectedVehicle.vehicleId);
+      if (completedLine && this.map) {
+        this.map.removeLayer(completedLine);
+        this.routeCompletedLines.delete(selectedVehicle.vehicleId);
+      }
+
       const routePoints = this.selectedRoutePoints.get(selectedVehicle.vehicleId);
       if (this.selectedRouteLine && this.map) {
         this.map.removeLayer(this.selectedRouteLine);
@@ -1236,19 +1634,182 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   private async fetchRoadRoutePoints(vehicle: Vehicle): Promise<Array<[number, number]>> {
-    const source = `${vehicle.currentLocation.lng},${vehicle.currentLocation.lat}`;
-    const destination = `${vehicle.destination.lng},${vehicle.destination.lat}`;
-    const url = `https://router.project-osrm.org/route/v1/driving/${source};${destination}?overview=full&geometries=geojson`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`OSRM route request failed with status ${response.status}`);
+    return this.fetchRoadRouteBetween(vehicle.currentLocation, vehicle.destination);
+  }
+
+  private async fetchRoadRouteBetween(
+    sourcePoint: { lat: number; lng: number },
+    destinationPoint: { lat: number; lng: number }
+  ): Promise<Array<[number, number]>> {
+    const source = `${sourcePoint.lng},${sourcePoint.lat}`;
+    const destination = `${destinationPoint.lng},${destinationPoint.lat}`;
+    const routePath = `/route/v1/driving/${source};${destination}?overview=full&geometries=geojson`;
+    const osrmUrls = this.getOsrmRouteUrls(routePath);
+    let lastError: unknown = null;
+
+    for (const url of osrmUrls) {
+      try {
+        const data = await this.fetchOsrmRoute(url);
+        const coordinates: Array<[number, number]> | undefined = data?.routes?.[0]?.geometry?.coordinates;
+        if (!coordinates?.length) {
+          throw new Error('OSRM route response has no coordinates');
+        }
+        return coordinates.map(([lng, lat]) => [lat, lng]);
+      } catch (error) {
+        lastError = error;
+        console.warn(`[FleetManagement] OSRM route fetch failed for ${url}`, error);
+      }
     }
-    const data = await response.json();
-    const coordinates: Array<[number, number]> | undefined = data?.routes?.[0]?.geometry?.coordinates;
-    if (!coordinates?.length) {
-      throw new Error('OSRM route response has no coordinates');
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('OSRM route request failed for both local and public endpoints');
+  }
+
+  private removeInactivePrimaryRouteCache(activeIds: Set<string>): void {
+    for (const vehicleId of Array.from(this.primaryMapRoutePoints.keys())) {
+      if (!activeIds.has(vehicleId)) {
+        this.primaryMapRoutePoints.delete(vehicleId);
+        this.primaryMapRouteSignatures.delete(vehicleId);
+        this.primaryMapRouteRequests.delete(vehicleId);
+      }
     }
-    return coordinates.map(([lng, lat]) => [lat, lng]);
+  }
+
+  private upsertProgressRouteLines(
+    vehicleId: string,
+    routePoints: Array<[number, number]>,
+    currentLocation: { lat: number; lng: number }
+  ): void {
+    if (!this.map || routePoints.length < 2) {
+      return;
+    }
+
+    const { completedPoints, remainingPoints } = this.splitRouteByCurrentLocation(routePoints, currentLocation);
+    const completedStyle = { color: '#333', weight: 3, opacity: 0.95 };
+    const remainingStyle = { color: '#2563eb', weight: 3, opacity: 0.9 };
+
+    const completedLine = this.routeCompletedLines.get(vehicleId);
+    if (completedPoints.length > 1) {
+      if (completedLine) {
+        completedLine.setLatLngs(completedPoints);
+      } else {
+        this.routeCompletedLines.set(vehicleId, L.polyline(completedPoints, completedStyle).addTo(this.map));
+      }
+    } else if (completedLine) {
+      this.map.removeLayer(completedLine);
+      this.routeCompletedLines.delete(vehicleId);
+    }
+
+    const remainingLine = this.routeLines.get(vehicleId);
+    if (remainingPoints.length > 1) {
+      if (remainingLine) {
+        remainingLine.setLatLngs(remainingPoints);
+      } else {
+        this.routeLines.set(vehicleId, L.polyline(remainingPoints, remainingStyle).addTo(this.map));
+      }
+    } else if (remainingLine) {
+      this.map.removeLayer(remainingLine);
+      this.routeLines.delete(vehicleId);
+    }
+  }
+
+  private splitRouteByCurrentLocation(
+    routePoints: Array<[number, number]>,
+    currentLocation: { lat: number; lng: number }
+  ): { completedPoints: Array<[number, number]>; remainingPoints: Array<[number, number]> } {
+    if (routePoints.length < 2) {
+      return { completedPoints: routePoints, remainingPoints: routePoints };
+    }
+
+    let closestIndex = 0;
+    let closestDistance = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < routePoints.length; index += 1) {
+      const [lat, lng] = routePoints[index];
+      const distance = this.getDistanceMeters({ lat, lng }, currentLocation);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = index;
+      }
+    }
+
+    const currentPoint: [number, number] = [currentLocation.lat, currentLocation.lng];
+    const completedPoints = routePoints.slice(0, Math.max(closestIndex + 1, 1));
+    if (!this.isSameRoutePoint(completedPoints[completedPoints.length - 1], currentPoint)) {
+      completedPoints.push(currentPoint);
+    }
+
+    let remainingPoints = routePoints.slice(Math.max(closestIndex, 0));
+    if (!remainingPoints.length) {
+      remainingPoints = [currentPoint];
+    } else if (!this.isSameRoutePoint(remainingPoints[0], currentPoint)) {
+      remainingPoints = [currentPoint, ...remainingPoints];
+    }
+
+    return { completedPoints, remainingPoints };
+  }
+
+  private isSameRoutePoint(a: [number, number], b: [number, number], epsilon = 0.00001): boolean {
+    return Math.abs(a[0] - b[0]) <= epsilon && Math.abs(a[1] - b[1]) <= epsilon;
+  }
+
+  private getPrimaryMapRouteSignature(vehicle: Vehicle): string {
+    return `${vehicle.source.lat.toFixed(5)},${vehicle.source.lng.toFixed(5)}|${vehicle.destination.lat.toFixed(5)},${vehicle.destination.lng.toFixed(5)}`;
+  }
+
+  private ensurePrimaryMapRoadRoute(vehicle: Vehicle, routeSignature: string): void {
+    if (this.primaryMapRouteRequests.has(vehicle.vehicleId)) {
+      return;
+    }
+    if (
+      this.primaryMapRouteSignatures.get(vehicle.vehicleId) === routeSignature &&
+      (this.primaryMapRoutePoints.get(vehicle.vehicleId)?.length || 0) > 1
+    ) {
+      return;
+    }
+
+    this.primaryMapRouteRequests.add(vehicle.vehicleId);
+    this.fetchRoadRouteBetween(vehicle.source, vehicle.destination)
+      .then((routePoints) => {
+        if (this.getPrimaryMapRouteSignature(vehicle) !== routeSignature) {
+          return;
+        }
+        this.primaryMapRoutePoints.set(vehicle.vehicleId, routePoints);
+        this.primaryMapRouteSignatures.set(vehicle.vehicleId, routeSignature);
+        const latestVehicle = this.vehicles.find((item) => item.vehicleId === vehicle.vehicleId) || vehicle;
+        this.upsertProgressRouteLines(vehicle.vehicleId, routePoints, latestVehicle.currentLocation);
+      })
+      .catch((error) => {
+        console.warn(`[FleetManagement] primary map road route unavailable for ${vehicle.vehicleId}`, error);
+      })
+      .finally(() => {
+        this.primaryMapRouteRequests.delete(vehicle.vehicleId);
+      });
+  }
+
+  private getOsrmRouteUrls(routePath: string): string[] {
+    const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+    const localUrl = `http://${host}:5001${routePath}`;
+    const publicUrl = `https://router.project-osrm.org${routePath}`;
+    if (localUrl === publicUrl) {
+      return [publicUrl];
+    }
+    return [localUrl, publicUrl];
+  }
+
+  private async fetchOsrmRoute(url: string): Promise<any> {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) {
+        throw new Error(`OSRM route request failed with status ${response.status}`);
+      }
+      return await response.json();
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
   }
 
   private getMarkerColor(status: Vehicle['status']): string {
@@ -1291,6 +1852,16 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
     });
   }
 
+  private getIncidentBlockIcon(): any {
+    return L.divIcon({
+      className: 'incident-block-pin',
+      html:
+        '<div style="width:24px;height:24px;border-radius:50%;background:#dc2626;border:2px solid #ffffff;box-shadow:0 0 0 1px #7f1d1d;position:relative;"><div style="position:absolute;left:4px;top:9px;width:12px;height:4px;background:#ffffff;border-radius:2px;"></div></div>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+  }
+
   private getVehicleIconSvg(color: string): string {
     return `<svg width="48" height="48" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="filter:drop-shadow(0 0 1px #0f172a);">
       <rect x="4" y="8" width="11" height="7" rx="1.5" fill="${color}" stroke="#ffffff" stroke-width="1.2"/>
@@ -1319,13 +1890,22 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       lat: midpoint.lat + 0.0038,
       lng: midpoint.lng - 0.0032
     };
+    const alternateWaypoint2 = {
+      lat: midpoint.lat - 0.0036,
+      lng: midpoint.lng + 0.0034
+    };
     const alternateRoutePoints = [fallbackVehicle.currentLocation, alternateWaypoint, fallbackVehicle.destination];
+    const alternateRoutePoints2 = [fallbackVehicle.currentLocation, alternateWaypoint2, fallbackVehicle.destination];
 
     return {
       incident,
       vehicle: fallbackVehicle,
       currentRoutePoints,
       alternateRoutePoints,
+      alternateRouteOptions: [
+        { routeId: 'alt-1', label: 'Alternate Route 1', routePoints: alternateRoutePoints },
+        { routeId: 'alt-2', label: 'Alternate Route 2', routePoints: alternateRoutePoints2 }
+      ],
       proposedDestination: fallbackVehicle.destination,
       heatmapPoints: this.heatmapPoints
     };

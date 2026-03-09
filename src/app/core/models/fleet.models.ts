@@ -49,8 +49,16 @@ export interface IncidentResolvePreview {
   vehicle: Vehicle;
   currentRoutePoints: LocationPoint[];
   alternateRoutePoints: LocationPoint[];
+  alternateRouteOptions: AlternateRouteOption[];
   proposedDestination: LocationPoint;
   heatmapPoints: HeatmapPoint[];
+}
+
+export interface AlternateRouteOption {
+  routeId: string;
+  label: string;
+  routePoints: LocationPoint[];
+  etaMinutes?: number;
 }
 
 export interface IncidentResolvePreviewResponse {
@@ -59,7 +67,8 @@ export interface IncidentResolvePreviewResponse {
 
 export interface ApplyIncidentRoutePayload {
   vehicleId: string;
-  routePoints: LocationPoint[];
+  routePoints?: LocationPoint[];
+  alternateRouteId?: string;
   destination: LocationPoint;
 }
 
@@ -122,4 +131,38 @@ export interface PerformanceAnalyticsResponse {
   summary: AnalyticsSummary;
   vehicleBreakdown: VehicleAnalytics[];
   recentReroutes: RerouteEvent[];
+}
+
+export interface VehicleOverviewResponse {
+  data: VehicleOverview;
+}
+
+export interface VehicleOverview {
+  vehicle: {
+    vehicleId: string;
+    name: string;
+    status: VehicleStatus;
+  };
+  trip: {
+    startTime: string | null;
+    reachTime: string | null;
+    status: 'idle' | 'moving' | 'completed';
+    distanceKm: number;
+    plannedDistanceKm: number;
+    delayMinutes: number;
+    rerouteCount: number;
+  };
+  rerouteImpact: {
+    totalEvents: number;
+    timeLossMinutes: number;
+    timeGainMinutes: number;
+    fuelLossLiters: number;
+    fuelGainLiters: number;
+    budgetLossInr: number;
+    budgetGainInr: number;
+  };
+  assumptions: {
+    fuelLitersPerMinute: number;
+    budgetPerFuelLiterInr: number;
+  };
 }
