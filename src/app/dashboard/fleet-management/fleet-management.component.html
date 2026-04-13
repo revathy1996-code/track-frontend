@@ -1,72 +1,98 @@
 <section class="grid gap-4">
-  <article class="rounded-xl border border-slate-200 bg-white p-4">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
+  <article class="rounded-xl border border-slate-200 bg-white p-4 control-card">
+    <div class="control-card-header">
+      <div class="control-card-title">
         <h2 class="text-2xl font-bold text-slate-900">Smart Fleet Management</h2>
         <p class="mt-1 text-sm text-slate-600">
           Alternate routing with road incidents, congestion heat, and delay reduction simulation.
         </p>
       </div>
-      <span
-        class="rounded-full px-3 py-1 text-xs font-semibold"
-        [class.bg-emerald-100]="isSimulationRunning"
-        [class.text-emerald-700]="isSimulationRunning"
-        [class.bg-amber-100]="!isSimulationRunning"
-        [class.text-amber-700]="!isSimulationRunning"
-      >
-        {{ isSimulationRunning ? 'Simulation Running' : 'Simulation Stopped' }}
-      </span>
-    </div>
-
-    <div class="mt-4 flex flex-wrap gap-2">
-      <button
-        type="button"
-        class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-        (click)="initMockVehicles()"
-        [disabled]="isInitializing || isStarting || isStopping"
-      >
-        Initialize 5 Mock Vehicles
-      </button>
-      <button
-        type="button"
-        class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-        (click)="startSimulation()"
-        [disabled]="isStarting || isStopping || isSimulationRunning || vehicles.length === 0"
-      >
-        Start Simulation
-      </button>
-      <button
-        type="button"
-        class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-        (click)="stopSimulation()"
-        [disabled]="isStarting || isStopping || !isSimulationRunning"
-      >
-        Stop Simulation
-      </button>
-      <button
-        type="button"
-        class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-        (click)="resetAllAndStartFresh()"
-        [disabled]="isStarting || isStopping || isInjectingIncident || isApplyingRoute || isResettingFresh"
-      >
-        {{ isResettingFresh ? 'Resetting...' : 'Reset All & Start Fresh' }}
-      </button>
-      <button
-        type="button"
-        class="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-        (click)="injectIncidentNearFocusedVehicle()"
-        [disabled]="isInjectingIncident || !isSimulationRunning || vehicles.length === 0"
-      >
-        Inject Road Block
-      </button>
-      <button
-        type="button"
-        class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-        (click)="resetVehicleFocus()"
-        [disabled]="!isAnalyzingVehicle"
-      >
-        Reset To All Vehicles
-      </button>
+      <div class="control-card-actions">
+        <span class="status-chip rounded-full px-3 py-1 text-xs font-semibold"
+          [class.bg-emerald-100]="isSimulationRunning"
+          [class.text-emerald-700]="isSimulationRunning"
+          [class.bg-amber-100]="!isSimulationRunning"
+          [class.text-amber-700]="!isSimulationRunning"
+        >
+          {{ isSimulationRunning ? 'Fleet Tracking Active' : 'Fleet Tracking Bench' }}
+        </span>
+        <div class="control-button-grid" role="group" aria-label="Simulation controls">
+          <button
+            type="button"
+            class="control-button control-button--initialize"
+            (click)="initMockVehicles()"
+            [disabled]="isInitializing || isStarting || isStopping"
+            title="Init 5"
+            data-tooltip="Init 5"
+            aria-label="Initialize five mock vehicles"
+          >
+            <span class="material-symbols-rounded control-button-icon" aria-hidden="true">add_circle</span>
+            <span class="sr-only">Initialize 5 mock vehicles</span>
+          </button>
+          <button
+            type="button"
+            class="control-button control-button--start"
+            (click)="startSimulation()"
+            [disabled]="isStarting || isStopping || isSimulationRunning || vehicles.length === 0"
+            title="Start"
+            data-tooltip="Start"
+            aria-label="Start simulation"
+          >
+            <span class="material-symbols-rounded control-button-icon" aria-hidden="true">play_arrow</span>
+            <span class="sr-only">Start simulation</span>
+          </button>
+          <button
+            type="button"
+            class="control-button control-button--stop"
+            (click)="stopSimulation()"
+            [disabled]="isStarting || isStopping || !isSimulationRunning"
+            title="Stop"
+            data-tooltip="Stop"
+            aria-label="Stop simulation"
+          >
+            <span class="material-symbols-rounded control-button-icon" aria-hidden="true">stop</span>
+            <span class="sr-only">Stop simulation</span>
+          </button>
+          <button
+            type="button"
+            class="control-button control-button--reset"
+            (click)="resetAllAndStartFresh()"
+            [disabled]="isStarting || isStopping || isInjectingIncident || isApplyingRoute || isResettingFresh"
+            title="Reset"
+            data-tooltip="Reset"
+            aria-label="Reset all and start fresh"
+          >
+            <span class="material-symbols-rounded control-button-icon" aria-hidden="true">restart_alt</span>
+            <span class="sr-only">
+              {{ isResettingFresh ? 'Resetting all simulations' : 'Reset all and start fresh' }}
+            </span>
+          </button>
+          <button
+            type="button"
+            class="control-button control-button--incident"
+            (click)="injectIncidentNearFocusedVehicle()"
+            [disabled]="isInjectingIncident || !isSimulationRunning || vehicles.length === 0"
+            title="Incident"
+            data-tooltip="Incident"
+            aria-label="Inject road block"
+          >
+            <span class="material-symbols-rounded control-button-icon" aria-hidden="true">warning</span>
+            <span class="sr-only">Inject road block</span>
+          </button>
+          <button
+            type="button"
+            class="control-button control-button--focus"
+            (click)="resetVehicleFocus()"
+            [disabled]="!isAnalyzingVehicle"
+            title="All"
+            data-tooltip="All"
+            aria-label="Reset to all vehicles"
+          >
+            <span class="material-symbols-rounded control-button-icon" aria-hidden="true">track_changes</span>
+            <span class="sr-only">Reset to all vehicles</span>
+          </button>
+        </div>
+      </div>
     </div>
 
     <p *ngIf="message" class="mt-3 text-sm font-medium text-emerald-700">{{ message }}</p>
@@ -74,26 +100,31 @@
     <p *ngIf="isLoadingSelectedRoute" class="mt-2 text-sm font-medium text-indigo-700">Loading exact road route...</p>
   </article>
 
-  <div class="grid gap-4 lg:grid-cols-5">
-    <article class="rounded-xl border border-slate-200 bg-white p-3 lg:col-span-3 lg:row-span-2">
+    <div class="grid gap-4 lg:grid-cols-5">
+    <article class="rounded-xl border border-slate-200 bg-white p-3 lg:col-span-3 lg:row-span-2 map-card">
       <div class="mb-3 flex items-center justify-between gap-2">
         <h3 class="text-base font-bold text-slate-900">
           Live Fleet Map
-          <span *ngIf="isAnalyzingVehicle" class="ml-2 rounded-full bg-indigo-100 px-2 py-1 text-xs font-semibold text-indigo-700">
+          <span
+            *ngIf="isAnalyzingVehicle"
+            class="ml-2 rounded-full bg-indigo-100 px-2 py-1 text-xs font-semibold text-indigo-700 analysis-chip"
+          >
             Analysis Mode
           </span>
         </h3>
-        <span class="rounded-full bg-orange-100 px-2 py-1 text-xs font-semibold text-orange-700">
+        <span
+          class="rounded-full bg-orange-100 px-2 py-1 text-xs font-semibold text-orange-700 congestion-chip"
+        >
           Congestion {{ congestionSummary }}
         </span>
       </div>
       <div id="fleet-live-map" class="h-[420px] rounded-xl border border-slate-200"></div>
     </article>
 
-    <article class="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-2">
+    <article class="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-2 table-card vehicle-summary-panel">
       <h3 class="text-base font-bold text-slate-900">Vehicle Summary</h3>
-      <div class="mt-3 max-h-[280px] overflow-x-auto overflow-y-auto">
-        <table class="min-w-full text-sm text-slate-700">
+      <div class="mt-3 max-h-[280px] overflow-x-auto overflow-y-auto table-scroll">
+        <table class="min-w-full text-sm text-slate-700 table-core vehicle-summary-table">
           <thead>
             <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
               <th class="py-2 pr-4">Vehicle</th>
@@ -107,13 +138,16 @@
           </thead>
           <tbody>
             <tr *ngFor="let vehicle of vehicles; trackBy: trackByVehicle" class="border-b border-slate-100">
-              <td class="py-3 pr-4 font-semibold text-slate-900">{{ vehicle.vehicleId }} - {{ vehicle.name }}</td>
+              <td class="py-3 pr-4 font-semibold text-slate-900 vehicle-name-cell">
+                <span class="vehicle-icon material-symbols-rounded" aria-hidden="true">local_shipping</span>
+                {{ vehicle.vehicleId }} - {{ vehicle.name }}
+              </td>
               <td class="py-3 pr-4">
                 {{ vehicle.currentLocation.lat | number: '1.4-4' }}, {{ vehicle.currentLocation.lng | number: '1.4-4' }}
               </td>
               <td class="py-3 pr-4">
                 <span
-                  class="rounded-full px-2 py-1 text-xs font-semibold"
+                  class="rounded-full px-2 py-1 text-xs font-semibold status-chip"
                   [class.bg-amber-100]="vehicle.status === 'idle'"
                   [class.text-amber-700]="vehicle.status === 'idle'"
                   [class.bg-blue-100]="vehicle.status === 'moving'"
@@ -131,16 +165,18 @@
                 <div class="flex items-center gap-2">
                   <button
                     type="button"
-                    class="inline-flex items-center rounded-md border border-indigo-300 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                    class="inline-flex items-center rounded-md border border-indigo-300 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 table-action-button"
                     (click)="analyzeVehicle(vehicle)"
                   >
+                    <span class="material-symbols-rounded text-[13px]" aria-hidden="true">analytics</span>
                     Analyze
                   </button>
                   <button
                     type="button"
-                    class="inline-flex items-center rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-50"
+                    class="inline-flex items-center rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-50 table-action-button"
                     (click)="openVehicleOverview(vehicle)"
                   >
+                    <span class="material-symbols-rounded text-[13px]" aria-hidden="true">visibility</span>
                     Overview
                   </button>
                 </div>
@@ -154,10 +190,10 @@
       </div>
     </article>
 
-    <article class="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-2">
+    <article class="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-2 table-card">
       <h3 class="text-base font-bold text-slate-900">Active Road Incidents</h3>
-      <div class="mt-3 max-h-[280px] overflow-x-auto overflow-y-auto">
-        <table class="min-w-full text-sm text-slate-700">
+      <div class="mt-3 max-h-[280px] overflow-x-auto overflow-y-auto table-scroll">
+        <table class="min-w-full text-sm text-slate-700 table-core">
           <thead>
             <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
               <th class="py-2 pr-4">Incident</th>
@@ -176,7 +212,7 @@
               <td class="py-3 pr-4">
                 <button
                   type="button"
-                  class="rounded-md border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  class="rounded-md border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 table-action-button"
                   (click)="openResolveModal(incident)"
                   [disabled]="isStarting || isStopping || isResolveModalOpen || isLoadingResolvePreview"
                 >
@@ -193,10 +229,10 @@
     </article>
   </div>
 
-  <article class="rounded-xl border border-slate-200 bg-white p-4">
+  <article class="rounded-xl border border-slate-200 bg-white p-4 table-card">
     <h3 class="text-base font-bold text-slate-900">Recent Reroutes</h3>
-    <div class="mt-3 max-h-[280px] overflow-x-auto overflow-y-auto">
-      <table class="min-w-full text-sm text-slate-700">
+    <div class="mt-3 max-h-[280px] overflow-x-auto overflow-y-auto table-scroll">
+      <table class="min-w-full text-sm text-slate-700 table-core">
         <thead>
           <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
             <th class="py-2 pr-4">Vehicle</th>

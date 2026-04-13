@@ -1,3 +1,298 @@
 /* You can add global styles to this file, and also import other style files */
 
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@48,500,0,0&display=swap');
+
+:root {
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable", sans-serif;
+  color: #0f172a;
+  background-color: #e0e7ff;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at top, rgba(59, 130, 246, 0.16), transparent 55%),
+    linear-gradient(180deg, #eef2ff 0%, #ffffff 55%, #f8fafc 100%);
+}
+
+#app-root,
+body,
+app-root {
+  min-height: 100vh;
+}
+
+section.grid {
+  padding: 2rem clamp(1rem, 4vw, 2.5rem);
+  gap: 1.25rem;
+}
+
+.control-card,
+.map-card,
+.table-card {
+  box-shadow: 0 25px 60px rgba(15, 23, 42, 0.08);
+  border-color: rgba(148, 163, 184, 0.4);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.85));
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.control-card:hover,
+.map-card:hover,
+.table-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 35px 70px rgba(15, 23, 42, 0.14);
+}
+
+.control-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: clamp(1rem, 4vw, 1.75rem);
+  flex-wrap: wrap;
+}
+
+.control-card-title {
+  min-width: 240px;
+  max-width: 52%;
+}
+
+.control-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.control-card-actions .status-chip {
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.2);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.status-chip {
+  text-transform: capitalize;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.analysis-chip,
+.congestion-chip {
+  box-shadow: inset 0 0 0 1px rgba(209, 213, 219, 0.6);
+}
+
+.analysis-chip {
+  color: #4338ca;
+}
+
+.congestion-chip {
+  font-weight: 600;
+  background: rgba(249, 115, 22, 0.08);
+  color: #c2410c;
+}
+
+.table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.7) transparent;
+}
+
+.table-scroll::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.table-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.6);
+}
+
+.table-core th {
+  letter-spacing: 0.08em;
+}
+
+.table-core td,
+.table-core th {
+  border-color: rgba(203, 213, 225, 0.4);
+}
+
+.vehicle-summary-panel {
+  background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(243, 244, 255, 0.88));
+}
+
+.vehicle-summary-table thead {
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.02));
+  border-radius: 12px;
+}
+
+.vehicle-summary-table thead th {
+  padding-bottom: 0.9rem;
+}
+
+.vehicle-summary-table tbody tr {
+  background: rgba(255, 255, 255, 0.8);
+  transition: background 0.25s ease;
+}
+
+.vehicle-summary-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.vehicle-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.vehicle-icon {
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.table-action-button {
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.table-action-button:hover {
+  border-color: rgba(99, 102, 241, 0.5);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.table-action-button .material-symbols-rounded {
+  margin-right: 0.2rem;
+}
+
+#fleet-live-map {
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.3);
+}
+
+.fleet-marker-container {
+  background: transparent !important;
+  border: none !important;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.control-button-grid {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.control-button {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: #f8fafc;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.18);
+  position: relative;
+}
+
+.control-button:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.7);
+  outline-offset: 3px;
+}
+
+.control-button:active {
+  transform: translateY(1px);
+}
+
+.control-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.control-button[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translate(-50%, -8px);
+  background: rgba(17, 24, 39, 0.95);
+  color: #f8fafc;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.25em;
+  padding: 0.25rem 0.7rem;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  box-shadow: 0 12px 22px rgba(15, 23, 42, 0.35);
+  text-transform: uppercase;
+}
+
+.control-button[data-tooltip]:hover::after,
+.control-button[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, -12px);
+}
+
+.material-symbols-rounded {
+  font-family: 'Material Symbols Rounded', 'Material Icons', sans-serif;
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: normal;
+  font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 48;
+}
+
+.control-button-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.control-button--initialize {
+  background: linear-gradient(135deg, #0f172a, #1d4ed8);
+}
+
+.control-button--start {
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+}
+
+.control-button--stop {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+}
+
+.control-button--reset {
+  background: linear-gradient(135deg, #16a34a, #059669);
+}
+
+.control-button--incident {
+  background: linear-gradient(135deg, #f97316, #fb923c);
+}
+
+.control-button--focus {
+  background: linear-gradient(135deg, #475569, #0f172a);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+@media (max-width: 768px) {
+  section.grid {
+    padding: 1rem;
+  }
+
+}

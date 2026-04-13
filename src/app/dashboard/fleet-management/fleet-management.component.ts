@@ -90,6 +90,10 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
   private resolveHeatLayers: any[] = [];
   private resolveMapRenderTimer?: number;
   private applyRouteWatchdogTimer?: number;
+  private mapResizeObserver?: ResizeObserver;
+  private handleWindowResize = (): void => {
+    this.map?.invalidateSize();
+  };
 
   constructor(
     private readonly fleetApi: FleetApiService,
@@ -138,6 +142,11 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
     if (this.applyRouteWatchdogTimer) {
       window.clearTimeout(this.applyRouteWatchdogTimer);
       this.applyRouteWatchdogTimer = undefined;
+    }
+    window.removeEventListener('resize', this.handleWindowResize);
+    if (this.mapResizeObserver) {
+      this.mapResizeObserver.disconnect();
+      this.mapResizeObserver = undefined;
     }
   }
 
@@ -965,10 +974,35 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(this.map);
+    this.setupMapResizeHandling();
 
     this.renderVehiclesOnMap();
     this.renderIncidentsOnMap();
     this.renderHeatmapOnMap();
+  }
+
+  private setupMapResizeHandling(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.addEventListener('resize', this.handleWindowResize);
+    window.requestAnimationFrame(() => this.handleWindowResize());
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const mapElement = document.getElementById('fleet-live-map');
+    if (!mapElement) {
+      return;
+    }
+
+    this.mapResizeObserver = new ResizeObserver(() => this.handleWindowResize());
+    this.mapResizeObserver.observe(mapElement);
   }
 
   private clearMessages(): void {
@@ -1406,10 +1440,10 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       const markerColor = this.getMarkerColor(vehicle.status);
       const markerHtml = this.getVehicleIconSvg(markerColor);
       const icon = L.divIcon({
-        className: 'fleet-marker',
+        className: 'fleet-marker-container',
         html: markerHtml,
-        iconSize: [48, 48],
-        iconAnchor: [24, 24]
+        iconSize: [36, 32],
+        iconAnchor: [18, 16]
       });
 
       const popup = `<b>${vehicle.vehicleId}</b><br/>${vehicle.name}<br/>Status: ${vehicle.status}<br/>Speed: ${vehicle.speedKmh} km/h<br/>Reroutes: ${vehicle.rerouteCount || 0}`;
@@ -1863,12 +1897,33 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   private getVehicleIconSvg(color: string): string {
-    return `<svg width="48" height="48" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="filter:drop-shadow(0 0 1px #0f172a);">
-      <rect x="4" y="8" width="11" height="7" rx="1.5" fill="${color}" stroke="#ffffff" stroke-width="1.2"/>
-      <rect x="15" y="10" width="4" height="5" rx="1" fill="${color}" stroke="#ffffff" stroke-width="1.2"/>
-      <circle cx="8" cy="16.5" r="1.8" fill="#0f172a"/>
-      <circle cx="16" cy="16.5" r="1.8" fill="#0f172a"/>
-    </svg>`;
+    const trailerColor = color || '#2563eb';
+    const cabColor = '#0f172a';
+    const windowColor = '#bfdbfe';
+    const stripeColor = '#fbbf24';
+    const wheelColor = '#111827';
+    const outlineColor = '#0b1220';
+
+    return `
+      <svg
+        class="map-vehicle-icon"
+        width="36"
+        height="32"
+        viewBox="0 0 36 32"
+        role="presentation"
+        aria-hidden="true"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <rect x="2.5" y="11" width="19" height="10" rx="3" fill="${trailerColor}" stroke="${outlineColor}" stroke-width="1" />
+        <rect x="21" y="10.5" width="11" height="11.5" rx="2.2" fill="${cabColor}" stroke="${outlineColor}" stroke-width="1" />
+        <rect x="23" y="13.5" width="7" height="5" rx="1.2" fill="${windowColor}" stroke="rgba(255, 255, 255, 0.6)" stroke-width="0.6" />
+        <rect x="23" y="19.8" width="7" height="2.5" rx="1" fill="${stripeColor}" />
+        <path d="M5 15.5h12" stroke="rgba(255,255,255,0.45)" stroke-width="1.2" stroke-linecap="round" />
+        <circle cx="8.5" cy="25.2" r="3.3" fill="${wheelColor}" stroke="#080c13" stroke-width="0.9" />
+        <circle cx="25" cy="25.2" r="3.3" fill="${wheelColor}" stroke="#080c13" stroke-width="0.9" />
+        <circle cx="19.5" cy="25.2" r="3.3" fill="${wheelColor}" stroke="#080c13" stroke-width="0.9" />
+      </svg>
+    `;
   }
 
   private buildLocalResolvePreview(incident: Incident): IncidentResolvePreview | undefined {
