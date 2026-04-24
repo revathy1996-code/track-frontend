@@ -91,6 +91,23 @@
             <span class="material-symbols-rounded control-button-icon" aria-hidden="true">track_changes</span>
             <span class="sr-only">Reset to all vehicles</span>
           </button>
+          <button
+            type="button"
+            class="control-button control-button--geofence"
+            (click)="toggleGeofenceMode()"
+            [disabled]="isStarting || isStopping || isGeofenceToggling"
+            title="Geofence"
+            [attr.data-tooltip]="isGeofenceModeActive ? 'Disable geofence' : 'Enable geofence'"
+            aria-label="Toggle geofence mode"
+            [attr.aria-pressed]="isGeofenceModeActive"
+          >
+            <span class="material-symbols-rounded control-button-icon" aria-hidden="true">
+              {{ isGeofenceModeActive ? 'gps_fixed' : 'gps_not_fixed' }}
+            </span>
+            <span class="sr-only">
+              {{ isGeofenceModeActive ? 'Disable geofence monitoring' : 'Enable geofence monitoring' }}
+            </span>
+          </button>
         </div>
       </div>
     </div>
@@ -258,6 +275,39 @@
     </div>
   </article>
 </section>
+
+<div class="geofence-toast-wrapper" *ngIf="geofenceBreaches.length">
+  <article
+    *ngFor="let breach of geofenceBreaches; trackBy: trackByGeofenceBreach"
+    class="geofence-toast"
+    [class.geofence-toast--active]="selectedGeofenceVehicleId === breach.vehicleId"
+  >
+    <div class="geofence-toast__header">
+      <div>
+        <p class="geofence-toast__title">Vehicle {{ breach.vehicleId }} deviated off route</p>
+        <p class="geofence-toast__meta">
+          {{ breach.breachDistanceMeters | number: '1.1-0' }} m beyond tolerance ({{ breach.toleranceMeters }} m)
+        </p>
+      </div>
+      <div class="geofence-toast__header-actions">
+        <span class="geofence-toast__timestamp">{{ breach.timestamp | date: 'shortTime' }}</span>
+        <button
+          type="button"
+          class="geofence-toast__close"
+          (click)="closeGeofenceToast(breach.vehicleId)"
+          aria-label="Close geofence alert"
+        >
+          close
+        </button>
+      </div>
+    </div>
+    <div class="geofence-toast__actions">
+      <button type="button" class="geofence-toast__button" (click)="showGeofenceDetails(breach)">
+        Get geofence details
+      </button>
+    </div>
+  </article>
+</div>
 
 <div
   *ngIf="isResolveModalOpen"

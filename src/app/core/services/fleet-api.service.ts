@@ -9,6 +9,9 @@ import {
   IncidentsResponse,
   PerformanceAnalyticsResponse,
   RerouteEventsResponse,
+  GeofenceBreachesResponse,
+  GeofenceForceResponse,
+  GeofenceToggleResponse,
   SimulationStatus,
   VehicleOverviewResponse,
   VehiclesResponse
@@ -112,6 +115,25 @@ export class FleetApiService {
     return this.http
       .get<VehicleOverviewResponse>(`${this.baseUrl}/vehicles/overview/${vehicleId}`)
       .pipe(this.withLogging('GET /vehicles/overview/:vehicleId'));
+  }
+
+  setGeofenceMonitoring(active: boolean): Observable<GeofenceToggleResponse> {
+    return this.http
+      .post<GeofenceToggleResponse>(`${this.baseUrl}/geofence/monitor`, { active })
+      .pipe(this.withLogging('POST /geofence/monitor'));
+  }
+
+  getGeofenceBreaches(): Observable<GeofenceBreachesResponse> {
+    return this.http
+      .get<GeofenceBreachesResponse>(`${this.baseUrl}/geofence`)
+      .pipe(this.withLogging('GET /geofence'));
+  }
+
+  forceGeofenceBreach(vehicleId?: string): Observable<GeofenceForceResponse> {
+    const payload = vehicleId ? { vehicleId } : {};
+    return this.http
+      .post<GeofenceForceResponse>(`${this.baseUrl}/geofence/force`, payload)
+      .pipe(this.withLogging('POST /geofence/force'));
   }
 
   private buildBackendBaseUrl(): string {

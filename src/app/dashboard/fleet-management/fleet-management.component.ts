@@ -10,6 +10,7 @@ import {
   Incident,
   IncidentResolvePreview,
   RerouteEvent,
+  GeofenceBreach,
   Vehicle,
   VehicleOverview
 } from '../../core/models/fleet.models';
@@ -34,6 +35,7 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
   isResettingFresh = false;
   message = '';
   errorMessage = '';
+  isGeofenceModeActive = false;
   selectedVehicleId: string | null = null;
   isLoadingSelectedRoute = false;
   isResolveModalOpen = false;
@@ -50,6 +52,9 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
   resolveModalIncident?: Incident;
   resolvePreview?: IncidentResolvePreview;
   vehicleOverview?: VehicleOverview;
+  isGeofenceToggling = false;
+  geofenceBreaches: GeofenceBreach[] = [];
+  selectedGeofenceVehicleId: string | null = null;
 
   private map?: any;
   private markers = new Map<string, any>();
@@ -65,12 +70,18 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
   private heatLayers = new Map<string, any>();
   private selectedRouteLine?: any;
   private selectedRoutePoints = new Map<string, Array<[number, number]>>();
+  private geofenceRouteLayer?: any;
+  private geofenceCircleLayer?: any;
+  private geofenceBreachMarker?: any;
+  private geofenceVehicleMarker?: any;
   private routeZoomedVehicleId: string | null = null;
   private statusSub?: Subscription;
   private updateSub?: Subscription;
   private incidentsSub?: Subscription;
   private rerouteSub?: Subscription;
   private rerouteHistorySub?: Subscription;
+  private geofenceBreachSub?: Subscription;
+  private geofenceClearSub?: Subscription;
   private heatmapIntervalId?: number;
   private heatmapRefreshTimerId?: number;
   private heatmapRefreshQueued = false;
@@ -108,6 +119,7 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
     this.loadIncidents();
     this.loadReroutes();
     this.initLiveUpdates();
+    this.loadGeofenceBreaches();
   }
 
   ngAfterViewInit(): void {
@@ -120,6 +132,8 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
     this.incidentsSub?.unsubscribe();
     this.rerouteSub?.unsubscribe();
     this.rerouteHistorySub?.unsubscribe();
+    this.geofenceBreachSub?.unsubscribe();
+    this.geofenceClearSub?.unsubscribe();
     if (this.heatmapIntervalId) {
       window.clearInterval(this.heatmapIntervalId);
     }
@@ -128,6 +142,7 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       this.heatmapRefreshTimerId = undefined;
     }
     this.fleetLive.disconnect();
+    this.clearGeofenceLayers();
     if (this.map) {
       this.map.remove();
     }
@@ -294,13 +309,20 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
           const affectedCount = response.affectedVehicleIds?.length || eligibleVehicles.length;
           this.message = `Road blocks injected for ${affectedCount} active vehicle(s).`;
           this.loadIncidents();
-        },
-        error: (error: unknown) => {
-          this.errorMessage = this.isTimeoutError(error)
-            ? 'Incident injection timed out. Check backend connection and try again.'
-            : 'Unable to inject incident.';
-        }
-      });
+      },
+      error: (error: unknown) => {
+        this.errorMessage = this.isTimeoutError(error)
+          ? 'Incident injection timed out. Check backend connection and try again.'
+          : 'Unable to inject incident.';
+      }
+    });
+  }
+
+  toggleGeofenceMode(): void {
+    if (this.isStarting || this.isStopping) {
+      return;
+    }
+    this.setGeofenceMonitoring(!this.isGeofenceModeActive);
   }
 
   openResolveModal(incident: Incident): void {
@@ -1010,6 +1032,215 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
     this.errorMessage = '';
   }
 
+  private setGeofenceMonitoring(active: boolean): void {
+    if (this.isGeofenceToggling) {
+      return;
+    }
+    this.isGeofenceToggling = true;
+    this.clearMessages();
+
+    this.fleetApi
+      .setGeofenceMonitoring(active)
+      .pipe(
+        finalize(() => {
+          this.isGeofenceToggling = false;
+        })
+      )
+      .subscribe({
+        next: (response) => {
+          this.isGeofenceModeActive = response.active;
+          this.message = response.active
+            ? 'Geofence monitoring enabled. Vehicles breaching the assigned corridors will be highlighted.'
+            : 'Geofence monitoring disabled.';
+
+          if (response.active) {
+            this.loadGeofenceBreaches(true);
+          } else {
+            this.geofenceBreaches = [];
+            this.selectedGeofenceVehicleId = null;
+            this.clearGeofenceLayers();
+          }
+        },
+        error: (error: unknown) => {
+          this.errorMessage = this.isTimeoutError(error)
+            ? 'Geofence toggle request timed out. Please try again.'
+            : 'Failed to update geofence monitoring state.';
+        }
+      });
+  }
+
+  private loadGeofenceBreaches(forceIfEmpty = false): void {
+    this.fleetApi.getGeofenceBreaches().subscribe({
+      next: (response) => {
+        this.geofenceBreaches = response.data;
+        if (this.geofenceBreaches.length) {
+          const firstBreach = this.geofenceBreaches[0];
+          this.selectedGeofenceVehicleId = firstBreach.vehicleId;
+          this.showGeofenceDetails(firstBreach);
+        } else if (forceIfEmpty && this.isGeofenceModeActive && this.vehicles.length) {
+          this.forceInitialGeofenceBreach();
+        } else {
+          this.selectedGeofenceVehicleId = null;
+          this.clearGeofenceLayers();
+        }
+      },
+      error: () => {
+        this.errorMessage = 'Unable to load current geofence breaches.';
+      }
+    });
+  }
+
+  private forceInitialGeofenceBreach(): void {
+    const fallbackVehicleId = this.selectedVehicleId || this.vehicles[0]?.vehicleId;
+    this.fleetApi.forceGeofenceBreach(fallbackVehicleId).subscribe({
+      next: (response) => {
+        const breach = response.data;
+        const remaining = this.geofenceBreaches.filter((item) => item.vehicleId !== breach.vehicleId);
+        this.geofenceBreaches = [breach, ...remaining];
+        this.selectedGeofenceVehicleId = breach.vehicleId;
+        this.showGeofenceDetails(breach);
+      },
+      error: () => {
+        this.errorMessage = 'Unable to force a geofence breach for the current fleet state.';
+      }
+    });
+  }
+
+  private handleGeofenceBreachEvent(breach: GeofenceBreach): void {
+    if (!breach) {
+      return;
+    }
+
+    const remaining = this.geofenceBreaches.filter((item) => item.vehicleId !== breach.vehicleId);
+    this.geofenceBreaches = [breach, ...remaining];
+    this.selectedGeofenceVehicleId = breach.vehicleId;
+    this.showGeofenceDetails(breach);
+  }
+
+  private handleGeofenceClearEvent(vehicleId: string): void {
+    if (!vehicleId) {
+      return;
+    }
+
+    const remaining = this.geofenceBreaches.filter((item) => item.vehicleId !== vehicleId);
+    this.geofenceBreaches = remaining;
+
+    if (this.selectedGeofenceVehicleId === vehicleId) {
+      if (remaining.length) {
+        const nextBreach = remaining[0];
+        this.selectedGeofenceVehicleId = nextBreach.vehicleId;
+        this.showGeofenceDetails(nextBreach);
+      } else {
+        this.selectedGeofenceVehicleId = null;
+        this.clearGeofenceLayers();
+      }
+    }
+  }
+
+  showGeofenceDetails(breach: GeofenceBreach): void {
+    if (!this.map || !breach || !Array.isArray(breach.routePoints) || breach.routePoints.length < 2) {
+      return;
+    }
+
+    this.selectedGeofenceVehicleId = breach.vehicleId;
+    this.clearGeofenceLayers();
+    const geofenceDisplayRadius = Math.max(breach.toleranceMeters * 2.35, breach.toleranceMeters + 240);
+    const routeLayer = L.polyline(breach.routePoints, {
+      color: '#a855f7',
+      weight: 6,
+      dashArray: '10 6',
+      opacity: 0.85
+    }).addTo(this.map);
+
+    const circleLayer = L.circle([breach.breachAt.lat, breach.breachAt.lng], {
+      radius: geofenceDisplayRadius,
+      color: '#ef4444',
+      weight: 3,
+      fillColor: 'rgba(239, 68, 68, 0.18)',
+      fillOpacity: 0.32
+    }).addTo(this.map);
+
+    const breachMarker = L.marker([breach.breachAt.lat, breach.breachAt.lng], {
+      icon: this.getGeofenceBreachIcon()
+    })
+      .addTo(this.map)
+      .bindPopup(
+        `<b>${breach.vehicleId}</b><br/>Breached route by ${breach.breachDistanceMeters.toFixed(0)} m<br/>Tolerance ${breach.toleranceMeters} m<br/>Fence view ${geofenceDisplayRadius.toFixed(0)} m`
+      );
+
+    const liveVehicle = this.vehicles.find((item) => item.vehicleId === breach.vehicleId);
+    let vehicleMarker: any;
+    if (liveVehicle) {
+      vehicleMarker = L.marker([liveVehicle.currentLocation.lat, liveVehicle.currentLocation.lng], {
+        icon: this.getGeofenceVehicleIcon()
+      })
+        .addTo(this.map)
+        .bindPopup(
+          `<b>${liveVehicle.vehicleId}</b><br/>${liveVehicle.name}<br/>Status: ${liveVehicle.status}<br/>Speed: ${liveVehicle.speedKmh} km/h`
+        );
+    }
+
+    this.geofenceRouteLayer = routeLayer;
+    this.geofenceCircleLayer = circleLayer;
+    this.geofenceBreachMarker = breachMarker;
+    this.geofenceVehicleMarker = vehicleMarker;
+    if (routeLayer.getBounds) {
+      const bounds = routeLayer.getBounds();
+      bounds.extend(circleLayer.getBounds());
+      if (liveVehicle) {
+        bounds.extend([liveVehicle.currentLocation.lat, liveVehicle.currentLocation.lng]);
+      }
+      this.map.flyToBounds(bounds, { padding: [45, 45], maxZoom: 16, duration: 0.85 });
+    }
+    breachMarker.openPopup();
+    if (vehicleMarker) {
+      window.setTimeout(() => vehicleMarker.openPopup(), 250);
+    }
+  }
+
+  private clearGeofenceLayers(): void {
+    if (!this.map) {
+      return;
+    }
+    if (this.geofenceRouteLayer) {
+      this.map.removeLayer(this.geofenceRouteLayer);
+      this.geofenceRouteLayer = undefined;
+    }
+    if (this.geofenceCircleLayer) {
+      this.map.removeLayer(this.geofenceCircleLayer);
+      this.geofenceCircleLayer = undefined;
+    }
+    if (this.geofenceBreachMarker) {
+      this.map.removeLayer(this.geofenceBreachMarker);
+      this.geofenceBreachMarker = undefined;
+    }
+    if (this.geofenceVehicleMarker) {
+      this.map.removeLayer(this.geofenceVehicleMarker);
+      this.geofenceVehicleMarker = undefined;
+    }
+  }
+
+  closeGeofenceToast(vehicleId: string): void {
+    const remaining = this.geofenceBreaches.filter((item) => item.vehicleId !== vehicleId);
+    this.geofenceBreaches = remaining;
+
+    if (this.selectedGeofenceVehicleId !== vehicleId) {
+      return;
+    }
+
+    if (remaining.length) {
+      this.showGeofenceDetails(remaining[0]);
+      return;
+    }
+
+    this.selectedGeofenceVehicleId = null;
+    this.clearGeofenceLayers();
+  }
+
+  trackByGeofenceBreach(_index: number, breach: GeofenceBreach): string {
+    return breach.vehicleId;
+  }
+
   private isTimeoutError(error: unknown): boolean {
     return (
       typeof error === 'object' &&
@@ -1290,6 +1521,14 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       if (!this.rerouteEvents.length) {
         this.rerouteEvents = events;
       }
+    });
+
+    this.geofenceBreachSub = this.fleetLive.geofenceBreaches$().subscribe((breach) => {
+      this.handleGeofenceBreachEvent(breach);
+    });
+
+    this.geofenceClearSub = this.fleetLive.geofenceClears$().subscribe((vehicleId) => {
+      this.handleGeofenceClearEvent(vehicleId);
     });
   }
 
@@ -1891,6 +2130,26 @@ export class FleetManagementComponent implements OnInit, AfterViewInit, OnDestro
       className: 'incident-block-pin',
       html:
         '<div style="width:24px;height:24px;border-radius:50%;background:#dc2626;border:2px solid #ffffff;box-shadow:0 0 0 1px #7f1d1d;position:relative;"><div style="position:absolute;left:4px;top:9px;width:12px;height:4px;background:#ffffff;border-radius:2px;"></div></div>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+  }
+
+  private getGeofenceBreachIcon(): any {
+    return L.divIcon({
+      className: 'geofence-breach-pin',
+      html:
+        '<div style="width:26px;height:26px;border-radius:50%;background:#ef4444;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;border:2px solid #fff;box-shadow:0 0 0 2px rgba(127,29,29,0.45);">!</div>',
+      iconSize: [26, 26],
+      iconAnchor: [13, 13]
+    });
+  }
+
+  private getGeofenceVehicleIcon(): any {
+    return L.divIcon({
+      className: 'geofence-vehicle-pin',
+      html:
+        '<div style="width:24px;height:24px;border-radius:50%;background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px solid #fff;box-shadow:0 0 0 2px rgba(15,23,42,0.2);">V</div>',
       iconSize: [24, 24],
       iconAnchor: [12, 12]
     });

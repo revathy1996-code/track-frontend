@@ -166,3 +166,25 @@ export interface VehicleOverview {
     budgetPerFuelLiterInr: number;
   };
 }
+
+export interface GeofenceBreach {
+  vehicleId: string;
+  breachAt: LocationPoint;
+  breachDistanceMeters: number;
+  toleranceMeters: number;
+  routePoints: LocationPoint[];
+  timestamp: string;
+  forced?: boolean;
+}
+
+export interface GeofenceBreachesResponse {
+  data: GeofenceBreach[];
+}
+
+export interface GeofenceToggleResponse {
+  active: boolean;
+}
+
+export interface GeofenceForceResponse {
+  data: GeofenceBreach;
+}

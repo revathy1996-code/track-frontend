@@ -279,6 +279,105 @@ section.grid {
   background: linear-gradient(135deg, #475569, #0f172a);
 }
 
+.control-button--geofence {
+  background: linear-gradient(135deg, #a855f7, #6366f1);
+}
+
+.geofence-toast-wrapper {
+  position: fixed;
+  top: clamp(4rem, 7vw, 5.5rem);
+  right: clamp(1rem, 2vw, 2.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  z-index: 1200;
+  pointer-events: none;
+}
+
+.geofence-toast {
+  pointer-events: auto;
+  min-width: 280px;
+  max-width: 320px;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: 0 15px 40px rgba(15, 23, 42, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: transform 0.25s ease, border-color 0.25s ease;
+}
+
+.geofence-toast--active {
+  border-color: #a855f7;
+  transform: translateY(-2px);
+}
+
+.geofence-toast__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.geofence-toast__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.geofence-toast__title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+}
+
+.geofence-toast__meta {
+  font-size: 0.65rem;
+  margin: 0.1rem 0 0;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.geofence-toast__timestamp {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.geofence-toast__close {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-family: 'Material Symbols Rounded', 'Material Icons', sans-serif;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0.1rem;
+}
+
+.geofence-toast__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.geofence-toast__button {
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  border: none;
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  box-shadow: 0 10px 20px rgba(99, 102, 241, 0.4);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

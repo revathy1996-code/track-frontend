@@ -1,7 +1,7 @@
 import { Injectable, NgZone } from '@angular/core';
 import { Observable, Subject } from 'rxjs';
 import { io, Socket } from 'socket.io-client';
-import { Incident, RerouteEvent, SimulationStatus, Vehicle } from '../models/fleet.models';
+import { GeofenceBreach, Incident, RerouteEvent, SimulationStatus, Vehicle } from '../models/fleet.models';
 
 @Injectable({
   providedIn: 'root'
@@ -14,6 +14,8 @@ export class FleetLiveService {
   private readonly incidentsSubject = new Subject<Incident[]>();
   private readonly rerouteSubject = new Subject<RerouteEvent>();
   private readonly rerouteHistorySubject = new Subject<RerouteEvent[]>();
+  private readonly geofenceBreachSubject = new Subject<GeofenceBreach>();
+  private readonly geofenceClearSubject = new Subject<string>();
 
   constructor(private readonly ngZone: NgZone) {}
 
@@ -55,6 +57,14 @@ export class FleetLiveService {
       this.ngZone.run(() => this.rerouteHistorySubject.next(events));
     });
 
+    this.socket.on('geofence:breach', (breach: GeofenceBreach) => {
+      this.ngZone.run(() => this.geofenceBreachSubject.next(breach));
+    });
+
+    this.socket.on('geofence:breach:clear', (payload: { vehicleId: string }) => {
+      this.ngZone.run(() => this.geofenceClearSubject.next(payload.vehicleId));
+    });
+
     this.socket.on('disconnect', (reason: string) => {
       console.log('[FleetLiveService] socket disconnected:', reason);
     });
@@ -91,6 +101,14 @@ export class FleetLiveService {
 
   rerouteHistory$(): Observable<RerouteEvent[]> {
     return this.rerouteHistorySubject.asObservable();
+  }
+
+  geofenceBreaches$(): Observable<GeofenceBreach> {
+    return this.geofenceBreachSubject.asObservable();
+  }
+
+  geofenceClears$(): Observable<string> {
+    return this.geofenceClearSubject.asObservable();
   }
 
   private buildSocketUrl(): string {
